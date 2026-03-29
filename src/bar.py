@@ -34,9 +34,9 @@ def _make_css(transparency: float) -> bytes:
     return f"""
 /* ---- Quickr Minibar ---- */
 .quickr-bar {{
-    background-color: rgba(18, 18, 18, {alpha:.2f});
-    border-top: 1px solid rgba(255,255,255,0.08);
-    border-radius: 10px 10px 0 0;
+    background-color: rgba(12, 12, 12, {alpha:.2f});
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    border-radius: 0 0 20px 20px;
 }}
 
 .quickr-btn {{
@@ -666,7 +666,7 @@ class QuickrBar(Gtk.Window):
 
         bar_w = max(nat_w, 120)
         bar_x = geom.x + (geom.width - bar_w) // 2
-        bar_y = geom.y + geom.height - bar_height
+        bar_y = geom.y  # top of the screen – notch style
 
         self.set_default_size(bar_w, bar_height)
         self.resize(bar_w, bar_height)
