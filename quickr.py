@@ -4,6 +4,7 @@
 Usage:
     quickr           Start the minibar
     quickr editor    Open the shortcut editor
+    quickr update    Check for updates (and install if running as AppImage)
     quickr --help    Show help
 """
 
@@ -28,7 +29,9 @@ def main():
         _usage()
         return
 
-    if args and args[0] == "editor":
+    if args and args[0] == "update":
+        _cmd_update()
+    elif args and args[0] == "editor":
         import gi
         gi.require_version("Gtk", "3.0")
         from gi.repository import Gtk
@@ -41,6 +44,51 @@ def main():
         from bar import QuickrBar
         _bar = QuickrBar()
         Gtk.main()
+
+
+def _cmd_update():
+    """CLI handler for ``quickr update``."""
+    from updater import (
+        VERSION,
+        RELEASES_PAGE,
+        check_for_updates,
+        do_appimage_update,
+        is_appimage,
+    )
+
+    print(f"Quickr {VERSION} – checking for updates…")
+    info = check_for_updates()
+
+    if info is None:
+        print("✓ Already up to date.")
+        return
+
+    print(
+        f"  New version available: v{info['latest']}  (installed: v{info['current']})"
+    )
+
+    if is_appimage():
+        if info.get("download_url"):
+            reply = input("  Download and install now? [y/N] ").strip().lower()
+            if reply == "y":
+                print("  Downloading…", end="", flush=True)
+                ok = do_appimage_update(info["download_url"])
+                if ok:
+                    print(" done!")
+                    print("  Restart Quickr to use the new version.")
+                else:
+                    print(" failed.")
+                    print(f"  Please download manually from:\n  {RELEASES_PAGE}")
+        else:
+            print(f"  Download the latest AppImage from:\n  {RELEASES_PAGE}")
+    else:
+        if info.get("download_url"):
+            print(f"  AppImage download: {info['download_url']}")
+        print(
+            f"  Or update via git:\n"
+            f"    cd <quickr-directory> && git pull && bash install.sh"
+        )
+        print(f"  Releases page: {RELEASES_PAGE}")
 
 
 if __name__ == "__main__":
