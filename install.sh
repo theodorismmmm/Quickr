@@ -13,9 +13,22 @@ info()  { echo -e "${GREEN}[quickr]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[quickr]${NC} $*"; }
 error() { echo -e "${RED}[quickr]${NC} $*" >&2; }
 
+# ── Detect SteamOS ────────────────────────────────────────────────────────
+is_steamos() {
+    grep -qiE '^(ID|ID_LIKE)=.*steamos' /etc/os-release 2>/dev/null
+}
+
 # ── Detect package manager ─────────────────────────────────────────────────
 install_deps() {
-    if command -v pacman &>/dev/null; then
+    if is_steamos; then
+        warn "SteamOS detected – the root filesystem is read-only; skipping automatic package installation."
+        warn "Required packages (python-gobject, gtk3, gdk-pixbuf2, librsvg, xdg-utils) must already be present."
+        warn "If they are missing, temporarily unlock the rootfs and install them:"
+        warn "  sudo steamos-readonly disable"
+        warn "  sudo pacman -Sy --noconfirm --needed python python-gobject gtk3 gdk-pixbuf2 librsvg xdg-utils"
+        warn "  sudo steamos-readonly enable"
+        return 0
+    elif command -v pacman &>/dev/null; then
         info "Arch / pacman detected – installing deps…"
         sudo pacman -Sy --noconfirm --needed \
             python \
