@@ -520,8 +520,11 @@ class QuickrBar(Gtk.Window):
 
         def _worker():
             info = upd.check_for_updates()
-            if info:
+            status = info.get("status")
+            if status == "update_available":
                 GLib.idle_add(self._on_update_found, info)
+            elif status == "error":
+                GLib.idle_add(self._on_update_check_error, info.get("message", "Unknown error"))
 
         threading.Thread(target=_worker, daemon=True).start()
         return False  # run only once
@@ -530,6 +533,15 @@ class QuickrBar(Gtk.Window):
         """Called on the GTK main thread when an update is available."""
         self._update_info = info
         self._mark_update_available(info["latest"])
+        return False
+
+    def _on_update_check_error(self, message: str) -> bool:
+        """Called on the GTK main thread when the update check fails."""
+        if self._update_btn is None:
+            return False
+        self._update_btn.set_tooltip_text(
+            f"Quickr {upd.VERSION} – update check failed\n{message}"
+        )
         return False
 
     def _on_check_updates_clicked(self, _btn) -> None:

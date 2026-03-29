@@ -118,10 +118,10 @@ class TestGetAllReleases(unittest.TestCase):
         mock_resp.__exit__ = MagicMock(return_value=False)
         return mock_resp
 
-    def test_returns_empty_list_on_network_error(self):
+    def test_returns_none_on_network_error(self):
         with patch("urllib.request.urlopen", side_effect=OSError("no network")):
             result = upd.get_all_releases()
-        self.assertEqual(result, [])
+        self.assertIsNone(result)
 
     def test_marks_current_version_correctly(self):
         releases_data = [
@@ -203,38 +203,64 @@ class TestGetAllReleases(unittest.TestCase):
 
 
 class TestCheckForUpdates(unittest.TestCase):
-    """check_for_updates() should return update info only when a newer
-    version is available."""
+    """check_for_updates() should return a structured dict with a 'status' key."""
 
     def _mock_release(self, tag: str, url=None):
         return patch.object(upd, "get_latest_release", return_value=(tag, url))
 
-    def test_returns_none_when_up_to_date(self):
+    def test_returns_up_to_date_status_when_current(self):
         with self._mock_release(upd.VERSION):
             result = upd.check_for_updates()
-        self.assertIsNone(result)
+        self.assertEqual(result["status"], "up_to_date")
+        self.assertEqual(result["current"], upd.VERSION)
 
-    def test_returns_none_when_network_fails(self):
+    def test_returns_error_status_when_network_fails(self):
         with patch.object(upd, "get_latest_release", return_value=None):
             result = upd.check_for_updates()
-        self.assertIsNone(result)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("message", result)
+        self.assertTrue(result["message"])
 
-    def test_returns_info_when_newer_version(self):
+    def test_error_message_mentions_github(self):
+        with patch.object(upd, "get_latest_release", return_value=None):
+            result = upd.check_for_updates()
+        self.assertIn("GitHub", result["message"])
+
+    def test_returns_update_available_status_when_newer(self):
         # Construct a version string that is definitely newer
         major = upd._parse_version(upd.VERSION)[0] + 1
         newer = f"{major}.0.0"
         dl_url = "https://example.com/Quickr.AppImage"
         with self._mock_release(newer, dl_url):
             result = upd.check_for_updates()
-        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "update_available")
         self.assertEqual(result["current"], upd.VERSION)
         self.assertEqual(result["latest"], newer)
         self.assertEqual(result["download_url"], dl_url)
 
-    def test_returns_none_when_older_version_on_server(self):
+    def test_returns_up_to_date_status_when_older_version_on_server(self):
         with self._mock_release("0.0.1"):
             result = upd.check_for_updates()
-        self.assertIsNone(result)
+        self.assertEqual(result["status"], "up_to_date")
+
+    # ── Backward-compatibility aliases so callers checking truthiness still work ──
+
+    def test_update_available_is_truthy(self):
+        major = upd._parse_version(upd.VERSION)[0] + 1
+        newer = f"{major}.0.0"
+        with self._mock_release(newer):
+            result = upd.check_for_updates()
+        self.assertTrue(result)
+
+    def test_up_to_date_is_truthy(self):
+        with self._mock_release(upd.VERSION):
+            result = upd.check_for_updates()
+        self.assertTrue(result)
+
+    def test_error_is_truthy(self):
+        with patch.object(upd, "get_latest_release", return_value=None):
+            result = upd.check_for_updates()
+        self.assertTrue(result)
 
 
 class TestDoAppImageUpdate(unittest.TestCase):
