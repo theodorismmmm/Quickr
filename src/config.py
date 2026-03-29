@@ -85,3 +85,39 @@ def update_shortcut(shortcut_id: str, name: str, shortcut_type: str, path: str) 
 
 def get_shortcuts() -> list:
     return load().get("shortcuts", [])
+
+
+# ---------------------------------------------------------------------------
+# Settings (transparency, icon size, bar height, built-in widgets)
+# ---------------------------------------------------------------------------
+
+SETTINGS_FILE = CONFIG_DIR / "settings.json"
+BUILTIN_WIDGET_IDS = ("clock", "date", "stopwatch")
+
+DEFAULT_SETTINGS: dict = {
+    "transparency": 0.96,
+    "icon_size": 28,
+    "bar_height": 48,
+    "show_on_startup": True,
+    "builtin_widgets": [],
+}
+
+
+def get_settings() -> dict:
+    """Load application settings, merging with defaults for any missing keys."""
+    _ensure_config()
+    if not SETTINGS_FILE.exists():
+        return dict(DEFAULT_SETTINGS)
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+        result = dict(DEFAULT_SETTINGS)
+        result.update(data)
+        return result
+    except (json.JSONDecodeError, OSError):
+        return dict(DEFAULT_SETTINGS)
+
+
+def save_settings(settings: dict) -> None:
+    """Persist settings to disk."""
+    _ensure_config()
+    SETTINGS_FILE.write_text(json.dumps(settings, indent=2))

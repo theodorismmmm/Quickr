@@ -19,14 +19,17 @@ class TestConfig(unittest.TestCase):
         """Point config at a temporary directory so tests are isolated."""
         self._tmpdir = tempfile.TemporaryDirectory()
         tmp_path = Path(self._tmpdir.name)
-        self._orig_cfg_dir  = cfg.CONFIG_DIR
-        self._orig_cfg_file = cfg.CONFIG_FILE
-        cfg.CONFIG_DIR  = tmp_path
-        cfg.CONFIG_FILE = tmp_path / "shortcuts.json"
+        self._orig_cfg_dir   = cfg.CONFIG_DIR
+        self._orig_cfg_file  = cfg.CONFIG_FILE
+        self._orig_set_file  = cfg.SETTINGS_FILE
+        cfg.CONFIG_DIR    = tmp_path
+        cfg.CONFIG_FILE   = tmp_path / "shortcuts.json"
+        cfg.SETTINGS_FILE = tmp_path / "settings.json"
 
     def tearDown(self):
-        cfg.CONFIG_DIR  = self._orig_cfg_dir
-        cfg.CONFIG_FILE = self._orig_cfg_file
+        cfg.CONFIG_DIR    = self._orig_cfg_dir
+        cfg.CONFIG_FILE   = self._orig_cfg_file
+        cfg.SETTINGS_FILE = self._orig_set_file
         self._tmpdir.cleanup()
 
     # ------------------------------------------------------------------
@@ -128,6 +131,69 @@ class TestConfig(unittest.TestCase):
     def test_remove_shortcut_nonexistent(self):
         ok = cfg.remove_shortcut("does-not-exist")
         self.assertFalse(ok)
+
+
+class TestSettings(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        tmp_path = Path(self._tmpdir.name)
+        self._orig_cfg_dir   = cfg.CONFIG_DIR
+        self._orig_cfg_file  = cfg.CONFIG_FILE
+        self._orig_set_file  = cfg.SETTINGS_FILE
+        cfg.CONFIG_DIR    = tmp_path
+        cfg.CONFIG_FILE   = tmp_path / "shortcuts.json"
+        cfg.SETTINGS_FILE = tmp_path / "settings.json"
+
+    def tearDown(self):
+        cfg.CONFIG_DIR    = self._orig_cfg_dir
+        cfg.CONFIG_FILE   = self._orig_cfg_file
+        cfg.SETTINGS_FILE = self._orig_set_file
+        self._tmpdir.cleanup()
+
+    # ------------------------------------------------------------------
+    # get_settings
+    # ------------------------------------------------------------------
+
+    def test_get_settings_returns_defaults_when_missing(self):
+        s = cfg.get_settings()
+        self.assertAlmostEqual(s["transparency"], cfg.DEFAULT_SETTINGS["transparency"])
+        self.assertEqual(s["icon_size"], cfg.DEFAULT_SETTINGS["icon_size"])
+        self.assertEqual(s["bar_height"], cfg.DEFAULT_SETTINGS["bar_height"])
+        self.assertEqual(s["builtin_widgets"], [])
+
+    def test_get_settings_merges_with_defaults(self):
+        # Write a partial settings file
+        cfg.SETTINGS_FILE.write_text(json.dumps({"transparency": 0.5}))
+        s = cfg.get_settings()
+        self.assertAlmostEqual(s["transparency"], 0.5)
+        # Defaults for unspecified keys are preserved
+        self.assertEqual(s["icon_size"], cfg.DEFAULT_SETTINGS["icon_size"])
+
+    def test_get_settings_recovers_from_corrupt_json(self):
+        cfg.SETTINGS_FILE.write_text("NOT JSON{{")
+        s = cfg.get_settings()
+        self.assertEqual(s, cfg.DEFAULT_SETTINGS)
+
+    # ------------------------------------------------------------------
+    # save_settings
+    # ------------------------------------------------------------------
+
+    def test_save_and_reload_settings(self):
+        data = dict(cfg.DEFAULT_SETTINGS)
+        data["transparency"] = 0.42
+        data["icon_size"] = 32
+        data["builtin_widgets"] = ["clock", "date"]
+        cfg.save_settings(data)
+
+        loaded = cfg.get_settings()
+        self.assertAlmostEqual(loaded["transparency"], 0.42)
+        self.assertEqual(loaded["icon_size"], 32)
+        self.assertEqual(loaded["builtin_widgets"], ["clock", "date"])
+
+    def test_save_settings_persists_to_disk(self):
+        cfg.save_settings({"transparency": 0.7})
+        raw = json.loads(cfg.SETTINGS_FILE.read_text())
+        self.assertAlmostEqual(raw["transparency"], 0.7)
 
 
 if __name__ == "__main__":
