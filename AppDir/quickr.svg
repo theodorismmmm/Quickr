@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Background rounded rect -->
+  <rect width="64" height="64" rx="14" ry="14" fill="#1a1a1a"/>
+  <!-- "Q" lettermark -->
+  <text x="32" y="46"
+        font-family="Sans,Arial" font-size="44" font-weight="700"
+        fill="#64b4ff"
+        text-anchor="middle">Q</text>
+  <!-- Small lightning bolt accent in bottom-right -->
+  <polygon points="38,44 42,34 38,34 42,24 34,36 38,36"
+           fill="#3d8bef" opacity="0.0"/>
+</svg>
