@@ -441,7 +441,21 @@ class QuickrEditor(Gtk.Window):
         path_row.pack_start(browse_btn, False, False, 0)
         self._form_box.pack_start(path_row, False, False, 0)
 
-        self._spacer(24)
+        self._spacer(8)
+
+        # Sudo mode (only relevant for app shortcuts)
+        sudo_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._sudo_check = Gtk.CheckButton(label="Run with elevated privileges (sudo/pkexec)")
+        self._sudo_check.set_tooltip_text(
+            "Use pkexec to launch this shortcut with administrator privileges.\n"
+            "Only applies to app-type shortcuts."
+        )
+        if editing:
+            self._sudo_check.set_active(bool(shortcut.get("sudo", False)))
+        sudo_row.pack_start(self._sudo_check, False, False, 0)
+        self._form_box.pack_start(sudo_row, False, False, 0)
+
+        self._spacer(16)
 
         # Action buttons
         btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -625,6 +639,19 @@ class QuickrEditor(Gtk.Window):
         self._startup_switch.set_valign(Gtk.Align.CENTER)
         startup_row.pack_start(self._startup_switch, False, False, 0)
         outer.pack_start(startup_row, False, False, 0)
+        self._spacer_in(outer, 20)
+
+        # -- Browser --
+        outer.pack_start(self._settings_label("URL BROWSER"), False, False, 0)
+        outer.pack_start(self._settings_sublabel(
+            "Browser used to open URL shortcuts (falls back to system default if not found)"
+        ), False, False, 0)
+
+        self._browser_combo = Gtk.ComboBoxText()
+        for opt in cfg.BROWSER_OPTIONS:
+            self._browser_combo.append(opt, opt.capitalize() if opt != "default" else "System Default")
+        self._browser_combo.set_active_id(settings.get("browser", "default") or "default")
+        outer.pack_start(self._browser_combo, False, False, 0)
         self._spacer_in(outer, 28)
 
         # Apply button
@@ -774,6 +801,7 @@ class QuickrEditor(Gtk.Window):
         name  = self._ent_name.get_text().strip()
         stype = self._type_combo.get_active_id()
         path  = self._ent_path.get_text().strip()
+        sudo  = self._sudo_check.get_active()
 
         if not name:
             self._shake_entry(self._ent_name)
@@ -784,9 +812,9 @@ class QuickrEditor(Gtk.Window):
 
         try:
             if existing:
-                cfg.update_shortcut(existing["id"], name, stype, path)
+                cfg.update_shortcut(existing["id"], name, stype, path, sudo=sudo)
             else:
-                cfg.add_shortcut(name, stype, path)
+                cfg.add_shortcut(name, stype, path, sudo=sudo)
         except ValueError as exc:
             self._error(str(exc))
             return
@@ -857,6 +885,7 @@ class QuickrEditor(Gtk.Window):
         settings["icon_size"]      = int(self._icon_scale.get_value())
         settings["bar_height"]     = int(self._height_scale.get_value())
         settings["show_on_startup"] = self._startup_switch.get_active()
+        settings["browser"]        = self._browser_combo.get_active_id() or "default"
         cfg.save_settings(settings)
 
         dlg = Gtk.MessageDialog(

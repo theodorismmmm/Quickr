@@ -195,6 +195,67 @@ class TestSettings(unittest.TestCase):
         raw = json.loads(cfg.SETTINGS_FILE.read_text())
         self.assertAlmostEqual(raw["transparency"], 0.7)
 
+    def test_browser_default_in_defaults(self):
+        s = cfg.get_settings()
+        self.assertIn("browser", s)
+        self.assertEqual(s["browser"], "default")
+
+    def test_browser_saved_and_loaded(self):
+        settings = cfg.get_settings()
+        settings["browser"] = "chrome"
+        cfg.save_settings(settings)
+        loaded = cfg.get_settings()
+        self.assertEqual(loaded["browser"], "chrome")
+
+    def test_browser_options_contains_expected_values(self):
+        for opt in ("default", "chrome", "chromium", "firefox"):
+            self.assertIn(opt, cfg.BROWSER_OPTIONS)
+
+
+class TestSudoFlag(unittest.TestCase):
+    """Tests for the per-shortcut sudo flag."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        tmp_path = Path(self._tmpdir.name)
+        self._orig_cfg_dir   = cfg.CONFIG_DIR
+        self._orig_cfg_file  = cfg.CONFIG_FILE
+        self._orig_set_file  = cfg.SETTINGS_FILE
+        cfg.CONFIG_DIR    = tmp_path
+        cfg.CONFIG_FILE   = tmp_path / "shortcuts.json"
+        cfg.SETTINGS_FILE = tmp_path / "settings.json"
+
+    def tearDown(self):
+        cfg.CONFIG_DIR    = self._orig_cfg_dir
+        cfg.CONFIG_FILE   = self._orig_cfg_file
+        cfg.SETTINGS_FILE = self._orig_set_file
+        self._tmpdir.cleanup()
+
+    def test_add_shortcut_sudo_false_by_default(self):
+        entry = cfg.add_shortcut("App", "app", "/usr/bin/app")
+        self.assertFalse(entry.get("sudo", False))
+
+    def test_add_shortcut_sudo_true(self):
+        entry = cfg.add_shortcut("App", "app", "/usr/bin/app", sudo=True)
+        self.assertTrue(entry["sudo"])
+
+    def test_sudo_flag_persisted(self):
+        entry = cfg.add_shortcut("Sudo App", "app", "/usr/bin/app", sudo=True)
+        loaded = next(s for s in cfg.get_shortcuts() if s["id"] == entry["id"])
+        self.assertTrue(loaded["sudo"])
+
+    def test_update_shortcut_sets_sudo(self):
+        entry = cfg.add_shortcut("App", "app", "/usr/bin/app", sudo=False)
+        cfg.update_shortcut(entry["id"], "App", "app", "/usr/bin/app", sudo=True)
+        updated = next(s for s in cfg.get_shortcuts() if s["id"] == entry["id"])
+        self.assertTrue(updated["sudo"])
+
+    def test_update_shortcut_clears_sudo(self):
+        entry = cfg.add_shortcut("App", "app", "/usr/bin/app", sudo=True)
+        cfg.update_shortcut(entry["id"], "App", "app", "/usr/bin/app", sudo=False)
+        updated = next(s for s in cfg.get_shortcuts() if s["id"] == entry["id"])
+        self.assertFalse(updated["sudo"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

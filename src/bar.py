@@ -142,18 +142,49 @@ def _builtin_text(widget_id: str, start_time: float) -> str:
 def _open_shortcut(shortcut: dict) -> None:
     stype = shortcut.get("type", "")
     path  = shortcut.get("path", "")
+    use_sudo = shortcut.get("sudo", False)
 
     if stype == "url":
-        webbrowser.open(path)
+        _open_url(path)
     elif stype == "app":
         if path.endswith(".desktop"):
-            subprocess.Popen(["gtk-launch", os.path.basename(path)[:-8]])
+            cmd = ["gtk-launch", os.path.basename(path)[:-8]]
+            if use_sudo:
+                cmd = ["pkexec"] + cmd
+            subprocess.Popen(cmd)
         else:
-            subprocess.Popen([path], start_new_session=True)
+            cmd = [path]
+            if use_sudo:
+                cmd = ["pkexec"] + cmd
+            subprocess.Popen(cmd, start_new_session=True)
     elif stype in ("file", "folder"):
         subprocess.Popen(["xdg-open", path], start_new_session=True)
     else:
         subprocess.Popen(["xdg-open", path], start_new_session=True)
+
+
+def _open_url(url: str) -> None:
+    """Open a URL using the browser configured in settings."""
+    settings = cfg.get_settings()
+    browser = settings.get("browser", "default")
+
+    # Multiple candidate binary names per browser, tried in order.
+    _BROWSER_CANDIDATES = {
+        "chrome":   ["google-chrome-stable", "google-chrome", "chrome"],
+        "chromium": ["chromium-browser", "chromium"],
+        "firefox":  ["firefox"],
+    }
+
+    if browser in _BROWSER_CANDIDATES:
+        for binary in _BROWSER_CANDIDATES[browser]:
+            try:
+                subprocess.Popen([binary, "--new-tab", url], start_new_session=True)
+                return
+            except FileNotFoundError:
+                continue
+        # None of the candidates found – fall through to system default
+
+    webbrowser.open(url)
 
 
 # ---------------------------------------------------------------------------

@@ -44,7 +44,7 @@ def save(data: dict) -> None:
     CONFIG_FILE.write_text(json.dumps(data, indent=2))
 
 
-def add_shortcut(name: str, shortcut_type: str, path: str) -> dict:
+def add_shortcut(name: str, shortcut_type: str, path: str, sudo: bool = False) -> dict:
     if shortcut_type not in SHORTCUT_TYPES:
         raise ValueError(f"Invalid type '{shortcut_type}'. Must be one of {SHORTCUT_TYPES}")
     data = load()
@@ -53,6 +53,7 @@ def add_shortcut(name: str, shortcut_type: str, path: str) -> dict:
         "type": shortcut_type,
         "name": name.strip(),
         "path": path.strip(),
+        "sudo": bool(sudo),
     }
     data["shortcuts"].append(entry)
     save(data)
@@ -69,7 +70,7 @@ def remove_shortcut(shortcut_id: str) -> bool:
     return False
 
 
-def update_shortcut(shortcut_id: str, name: str, shortcut_type: str, path: str) -> bool:
+def update_shortcut(shortcut_id: str, name: str, shortcut_type: str, path: str, sudo: bool = False) -> bool:
     if shortcut_type not in SHORTCUT_TYPES:
         raise ValueError(f"Invalid type '{shortcut_type}'.")
     data = load()
@@ -78,6 +79,7 @@ def update_shortcut(shortcut_id: str, name: str, shortcut_type: str, path: str) 
             s["name"] = name.strip()
             s["type"] = shortcut_type
             s["path"] = path.strip()
+            s["sudo"] = bool(sudo)
             save(data)
             return True
     return False
@@ -94,12 +96,17 @@ def get_shortcuts() -> list:
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
 BUILTIN_WIDGET_IDS = ("clock", "date", "stopwatch")
 
+# Supported browser choices for opening URL shortcuts.
+# "default" means use the system default browser (xdg-open / webbrowser).
+BROWSER_OPTIONS = ("default", "chrome", "chromium", "firefox")
+
 DEFAULT_SETTINGS: dict = {
     "transparency": 0.96,
     "icon_size": 28,
     "bar_height": 48,
     "show_on_startup": True,
     "builtin_widgets": [],
+    "browser": "default",
 }
 
 
