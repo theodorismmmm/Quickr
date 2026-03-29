@@ -37,6 +37,18 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
 sudo dnf install python3-gobject gtk3 gdk-pixbuf2 librsvg2 xdg-utils
 ```
 
+**SteamOS (Steam Deck)**
+
+The root filesystem is read-only on SteamOS, so `install.sh` skips automatic
+package installation and continues with the rest of the setup.  
+If the required packages are missing, unlock the rootfs first:
+
+```bash
+sudo steamos-readonly disable
+sudo pacman -Sy --noconfirm --needed python python-gobject gtk3 gdk-pixbuf2 librsvg xdg-utils
+sudo steamos-readonly enable
+```
+
 ### 2 · Install Quickr
 
 ```bash
@@ -46,7 +58,7 @@ bash install.sh
 ```
 
 The installer:
-- Installs system dependencies for your distro
+- Installs system dependencies for your distro (skipped on SteamOS — see above)
 - Creates `~/.local/bin/quickr` on your `$PATH`
 - Adds an optional autostart entry so the bar launches on login
 
@@ -59,6 +71,23 @@ quickr
 # Open the shortcut editor
 quickr editor
 ```
+
+---
+
+## Uninstalling
+
+```bash
+# Via the CLI
+quickr uninstall
+
+# Or directly with the uninstall script
+bash uninstall.sh
+```
+
+Both commands remove only the files that `install.sh` placed on the system
+(`~/.local/bin/quickr`, desktop entries) and optionally the configuration
+directory (`~/.config/quickr/`).  
+The source directory you cloned is **never** touched.
 
 ---
 
@@ -117,9 +146,10 @@ Quickr/
 │   ├── editor.py      # Editor GTK3 window
 │   ├── config.py      # JSON config management
 │   └── icons.py       # Icon resolution helpers
-├── quickr.py          # Entry point (bar or editor)
+├── quickr.py          # Entry point (bar, editor, update, uninstall)
 ├── quickr             # Shell wrapper (symlinked to ~/.local/bin/quickr)
 ├── install.sh         # Installer
+├── uninstall.sh       # Uninstaller (removes installed files only)
 ├── build-appimage.sh  # AppImage builder
 ├── AppDir/            # AppImage directory skeleton
 └── requirements.txt
