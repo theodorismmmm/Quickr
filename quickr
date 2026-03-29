@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# quickr – launcher wrapper
+# Placed on $PATH by install.sh
+set -euo pipefail
+
+QUICKR_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+exec python3 "${QUICKR_HOME}/quickr.py" "$@"

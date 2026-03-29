@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Quickr
+Comment=Linux minibar & shortcut launcher
+Exec=AppRun
+Icon=quickr
+Type=Application
+Categories=Utility;
+Terminal=false
