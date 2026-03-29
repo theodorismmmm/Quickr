@@ -31,9 +31,10 @@ VERSION: str = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else 
 # GitHub coordinates
 # ---------------------------------------------------------------------------
 
-GITHUB_REPO   = "theodorismmmm/Quickr"
-RELEASES_API  = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-RELEASES_PAGE = f"https://github.com/{GITHUB_REPO}/releases"
+GITHUB_REPO       = "theodorismmmm/Quickr"
+RELEASES_API      = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+RELEASES_LIST_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
+RELEASES_PAGE     = f"https://github.com/{GITHUB_REPO}/releases"
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +86,61 @@ def get_latest_release():
         return tag, appimage_url
     except Exception:
         return None
+
+
+def get_all_releases():
+    """Query the GitHub Releases API and return a list of release dicts.
+
+    Each dict contains:
+        "version"      – version string (without leading 'v')
+        "tag"          – original tag name
+        "download_url" – AppImage asset URL, or None
+        "is_current"   – True if this matches the installed VERSION
+        "status"       – "current" | "newer" | "older"
+
+    Returns an empty list when the network is unavailable or the request fails.
+    """
+    try:
+        req = urllib.request.Request(
+            RELEASES_LIST_API,
+            headers={"User-Agent": f"Quickr/{VERSION}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+
+        releases = []
+        for entry in data:
+            tag = entry.get("tag_name", "")
+            version = tag.lstrip("v")
+            assets = entry.get("assets", [])
+            appimage_url = next(
+                (
+                    a["browser_download_url"]
+                    for a in assets
+                    if a.get("name", "").endswith(".AppImage")
+                ),
+                None,
+            )
+            parsed = _parse_version(version)
+            current = _parse_version(VERSION)
+            if parsed == current:
+                status = "current"
+            elif parsed > current:
+                status = "newer"
+            else:
+                status = "older"
+            releases.append(
+                {
+                    "version": version,
+                    "tag": tag,
+                    "download_url": appimage_url,
+                    "is_current": parsed == current,
+                    "status": status,
+                }
+            )
+        return releases
+    except Exception:
+        return []
 
 
 def check_for_updates():
