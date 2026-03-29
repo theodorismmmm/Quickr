@@ -118,6 +118,25 @@ EOF
     info "Desktop entry installed."
 }
 
+# ── Check for updates ─────────────────────────────────────────────────────
+check_for_updates() {
+    info "Checking for updates…"
+    python3 -c "
+import sys, json
+sys.path.insert(0, '${QUICKR_DIR}/src')
+try:
+    from updater import check_for_updates, VERSION, RELEASES_PAGE
+    result = check_for_updates()
+    if result:
+        print('  \u2b06  Update available: v' + result['latest'] + '  (installed: v' + result['current'] + ')')
+        print(\"     Run 'quickr update' to update.\")
+    else:
+        print('  \u2713  Quickr ' + VERSION + ' is up to date.')
+except Exception:
+    pass
+" 2>/dev/null || true
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────
 main() {
     info "=== Quickr installer ==="
@@ -133,9 +152,12 @@ main() {
         install_autostart
     fi
 
+    check_for_updates
+
     echo
     info "Done! Start Quickr with:  quickr"
     info "Open the editor with:     quickr editor"
+    info "Check for updates with:   quickr update"
 }
 
 main "$@"

@@ -22,6 +22,7 @@ if str(_SRC) not in sys.path:
 
 import config as cfg
 import icons as ico
+import updater as upd
 
 # ---------------------------------------------------------------------------
 # Styling
@@ -62,6 +63,36 @@ def _make_css(transparency: float) -> bytes:
     padding: 2px 8px;
     margin: 0 2px;
     color: #e0e0e0;
+}}
+
+.quickr-update-btn {{
+    background: rgba(255,255,255,0.06);
+    border: none;
+    border-radius: 6px;
+    padding: 3px 8px;
+    margin: 0 2px;
+    min-width: 0;
+    min-height: 0;
+    color: #aaaaaa;
+    font-size: 11px;
+}}
+
+.quickr-update-btn:hover {{
+    background-color: rgba(100,180,255,0.15);
+    color: #e0e0e0;
+}}
+
+.quickr-update-btn:active {{
+    background-color: rgba(100,180,255,0.25);
+}}
+
+.quickr-update-btn.has-update {{
+    background: rgba(255,200,50,0.15);
+    color: #ffc832;
+}}
+
+.quickr-update-btn.has-update:hover {{
+    background: rgba(255,200,50,0.25);
 }}
 
 tooltip {{
@@ -138,6 +169,9 @@ class QuickrBar(Gtk.Window):
         self._builtin_labels: dict = {}   # widget_id -> Gtk.Label
         self._timer_id = None
         self._css_provider = Gtk.CssProvider()
+        # Update state (AppImage only)
+        self._update_info = None   # pending update metadata
+        self._update_btn  = None
         self._apply_style()
         self._build_window()
         self._build_bar()
@@ -145,6 +179,9 @@ class QuickrBar(Gtk.Window):
         # Show bar on startup (animated)
         if self._settings.get("show_on_startup", True):
             self._animate_show()
+        # Schedule a background update check for AppImage users
+        if upd.is_appimage():
+            GLib.timeout_add_seconds(3, self._bg_check_for_updates)
 
     # ------------------------------------------------------------------
     # Setup
@@ -262,6 +299,12 @@ class QuickrBar(Gtk.Window):
 
         menu.append(Gtk.SeparatorMenuItem())
 
+        item_update = Gtk.MenuItem(label="Check for Updates")
+        item_update.connect("activate", lambda _: self._on_check_updates_clicked(None))
+        menu.append(item_update)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
         item_quit = Gtk.MenuItem(label="Quit Quickr")
         item_quit.connect("activate", lambda _: Gtk.main_quit())
         menu.append(item_quit)
@@ -314,6 +357,7 @@ class QuickrBar(Gtk.Window):
         for child in self._btn_box.get_children():
             self._btn_box.remove(child)
         self._builtin_labels.clear()
+        self._update_btn = None
 
         # Cancel existing per-second timer
         if self._timer_id is not None:
@@ -338,6 +382,14 @@ class QuickrBar(Gtk.Window):
             for widget_id in enabled_builtins:
                 w = self._make_builtin_widget(widget_id)
                 self._btn_box.pack_start(w, False, False, 0)
+
+        # AppImage users get a persistent "Check for Updates" button
+        if upd.is_appimage():
+            self._update_btn = self._make_update_button()
+            self._btn_box.pack_end(self._update_btn, False, False, 0)
+            # Restore highlighted state if an update was already detected
+            if self._update_info is not None:
+                self._mark_update_available(self._update_info["latest"])
 
         self._btn_box.show_all()
         self._position(bar_height)
@@ -404,8 +456,191 @@ class QuickrBar(Gtk.Window):
         return True   # keep the timer alive
 
     # ------------------------------------------------------------------
-    # Events
+    # AppImage update button
     # ------------------------------------------------------------------
+
+    def _make_update_button(self) -> Gtk.Button:
+        """Build the small 'Check for Updates' button shown in AppImage mode."""
+        btn = Gtk.Button(label="⟳ Updates")
+        btn.get_style_context().add_class("quickr-update-btn")
+        btn.set_relief(Gtk.ReliefStyle.NONE)
+        btn.set_focus_on_click(False)
+        btn.set_tooltip_text(
+            f"Quickr {upd.VERSION} – click to check for updates"
+        )
+        btn.connect("clicked", self._on_check_updates_clicked)
+        return btn
+
+    def _mark_update_available(self, latest_version: str) -> None:
+        """Highlight the update button to indicate an available update."""
+        if self._update_btn is None:
+            return
+        self._update_btn.set_label(f"↑ v{latest_version}")
+        self._update_btn.set_tooltip_text(
+            f"Update available: v{latest_version} (installed: v{upd.VERSION})\n"
+            "Click to update"
+        )
+        ctx = self._update_btn.get_style_context()
+        ctx.add_class("has-update")
+
+    def _bg_check_for_updates(self) -> bool:
+        """Background update check run once shortly after startup."""
+        import threading
+
+        def _worker():
+            info = upd.check_for_updates()
+            if info:
+                GLib.idle_add(self._on_update_found, info)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return False  # run only once
+
+    def _on_update_found(self, info: dict) -> bool:
+        """Called on the GTK main thread when an update is available."""
+        self._update_info = info
+        self._mark_update_available(info["latest"])
+        return False
+
+    def _on_check_updates_clicked(self, _btn) -> None:
+        """Handle a click on the update button or the tray menu item."""
+        import threading
+
+        # Show a 'checking…' state on the button while we query the API
+        if self._update_btn is not None:
+            self._update_btn.set_label("⟳ Checking…")
+            self._update_btn.set_sensitive(False)
+
+        def _worker():
+            info = upd.check_for_updates()
+            GLib.idle_add(self._on_manual_check_done, info)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_manual_check_done(self, info) -> bool:
+        """GTK-thread callback after a manual update check finishes."""
+        if self._update_btn is not None:
+            self._update_btn.set_sensitive(True)
+
+        if info is None:
+            # Reset label if no update was already known
+            if self._update_info is None and self._update_btn is not None:
+                self._update_btn.set_label("⟳ Updates")
+                self._update_btn.set_tooltip_text(
+                    f"Quickr {upd.VERSION} – up to date"
+                )
+            _show_info(
+                self,
+                "No updates available",
+                f"Quickr {upd.VERSION} is the latest version.",
+            )
+        else:
+            self._update_info = info
+            self._mark_update_available(info["latest"])
+            self._prompt_update(info)
+        return False
+
+    def _prompt_update(self, info: dict) -> None:
+        """Show a dialog asking the user whether to install the update."""
+        import webbrowser as wb
+
+        dlg = Gtk.MessageDialog(
+            transient_for=self,
+            flags=0,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.NONE,
+            text=f"Quickr v{info['latest']} is available",
+        )
+        dlg.format_secondary_text(
+            f"You have v{info['current']} installed.\n"
+            + (
+                "Click 'Update' to download and install the new AppImage."
+                if info.get("download_url")
+                else f"Visit the releases page to download the latest version."
+            )
+        )
+
+        dlg.add_button("Later", Gtk.ResponseType.CANCEL)
+        if info.get("download_url"):
+            dlg.add_button("Update", Gtk.ResponseType.OK)
+        else:
+            dlg.add_button("Open Releases Page", Gtk.ResponseType.OK)
+
+        response = dlg.run()
+        dlg.destroy()
+
+        if response == Gtk.ResponseType.OK:
+            if info.get("download_url"):
+                self._run_appimage_update(info)
+            else:
+                wb.open(upd.RELEASES_PAGE)
+
+    def _run_appimage_update(self, info: dict) -> None:
+        """Download and apply the AppImage update, showing a progress dialog."""
+        import threading
+
+        # Progress dialog
+        prog_dlg = Gtk.Dialog(
+            title="Updating Quickr…",
+            transient_for=self,
+            flags=Gtk.DialogFlags.MODAL,
+        )
+        prog_dlg.set_default_size(340, 80)
+        content = prog_dlg.get_content_area()
+        content.set_spacing(8)
+        content.set_margin_top(12)
+        content.set_margin_bottom(12)
+        content.set_margin_start(16)
+        content.set_margin_end(16)
+
+        lbl = Gtk.Label(label=f"Downloading Quickr v{info['latest']}…")
+        lbl.set_halign(Gtk.Align.START)
+        content.pack_start(lbl, False, False, 0)
+
+        progress = Gtk.ProgressBar()
+        progress.set_pulse_step(0.05)
+        content.pack_start(progress, False, False, 0)
+
+        prog_dlg.show_all()
+        # Pulse while waiting for size info
+        pulse_id = GLib.timeout_add(80, lambda: (progress.pulse() or True))
+
+        result: dict = {"ok": None}
+
+        def _progress_cb(done: int, total: int) -> None:
+            if total > 0:
+                GLib.idle_add(progress.set_fraction, done / total)
+
+        def _worker() -> None:
+            ok = upd.do_appimage_update(info["download_url"], _progress_cb)
+            result["ok"] = ok
+            GLib.idle_add(_finish)
+
+        def _finish() -> None:
+            GLib.source_remove(pulse_id)
+            prog_dlg.destroy()
+            if result["ok"]:
+                _show_info(
+                    self,
+                    "Update installed",
+                    f"Quickr v{info['latest']} has been installed.\n"
+                    "Please restart the application to use the new version.",
+                )
+                # Reset button state
+                self._update_info = None
+                if self._update_btn is not None:
+                    self._update_btn.set_label("⟳ Updates")
+                    ctx = self._update_btn.get_style_context()
+                    ctx.remove_class("has-update")
+                    self._update_btn.set_tooltip_text(
+                        f"Quickr {info['latest']} – restart to apply update"
+                    )
+            else:
+                _show_error(
+                    self,
+                    f"Download failed.\nPlease visit:\n{upd.RELEASES_PAGE}",
+                )
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _on_btn_clicked(self, _btn, shortcut):
         try:
@@ -473,6 +708,19 @@ def _show_error(parent, msg: str):
         message_type=Gtk.MessageType.ERROR,
         buttons=Gtk.ButtonsType.CLOSE,
         text="Quickr error",
+    )
+    dlg.format_secondary_text(msg)
+    dlg.run()
+    dlg.destroy()
+
+
+def _show_info(parent, title: str, msg: str):
+    dlg = Gtk.MessageDialog(
+        transient_for=parent,
+        flags=0,
+        message_type=Gtk.MessageType.INFO,
+        buttons=Gtk.ButtonsType.CLOSE,
+        text=title,
     )
     dlg.format_secondary_text(msg)
     dlg.run()
