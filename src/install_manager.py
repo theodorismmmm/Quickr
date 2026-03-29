@@ -204,14 +204,22 @@ class InstallManagerDialog(Gtk.Dialog):
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _on_fetch_done(self, releases: list) -> bool:
+    def _on_fetch_done(self, releases) -> bool:
         """Called on GTK thread once releases have been fetched."""
         self._spinner_box.hide()
 
+        if releases is None:
+            self._error_lbl.set_text(
+                "Could not reach the GitHub API.\n"
+                "Check your internet connection and try again."
+            )
+            self._error_lbl.show()
+            self._sub_lbl.set_text(f"Current version: v{upd.VERSION}  •  Network error")
+            return False
+
         if not releases:
             self._error_lbl.set_text(
-                "Could not fetch releases from GitHub.\n"
-                "Check your internet connection and try again."
+                "No releases found on GitHub."
             )
             self._error_lbl.show()
             self._sub_lbl.set_text(f"Current version: v{upd.VERSION}  •  No releases found")

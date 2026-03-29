@@ -5,9 +5,14 @@ Public API
 ----------
 VERSION          : str  – currently installed version string.
 is_appimage()    : bool – True when running inside an AppImage.
-check_for_updates() -> dict | None
-    Returns {"current", "latest", "download_url"} when a newer release is
-    available on GitHub, or None if already up to date / network is unreachable.
+check_for_updates() -> dict
+    Returns a dict with a ``status`` key:
+        ``{"status": "update_available", "current": ..., "latest": ..., "download_url": ...}``
+            A newer release exists on GitHub.
+        ``{"status": "up_to_date", "current": ...}``
+            The installed version is already the latest.
+        ``{"status": "error", "message": ...}``
+            The GitHub API could not be reached (network/proxy/timeout).
 do_appimage_update(download_url) -> bool
     Downloads the new AppImage and replaces the running binary in-place.
     Only meaningful when is_appimage() is True.
@@ -98,7 +103,9 @@ def get_all_releases():
         "is_current"   – True if this matches the installed VERSION
         "status"       – "current" | "newer" | "older"
 
-    Returns an empty list when the network is unavailable or the request fails.
+    Returns ``None`` when the network is unavailable or the request fails
+    (as opposed to an empty list ``[]`` when the API responds but has no
+    releases).
     """
     try:
         req = urllib.request.Request(
@@ -140,34 +147,47 @@ def get_all_releases():
             )
         return releases
     except Exception:
-        return []
+        return None
 
 
-def check_for_updates():
-    """Return update information when a newer version is available.
+def check_for_updates() -> dict:
+    """Return a structured dict describing the current update state.
 
-    Returns a dict with keys:
-        "current"      – the currently installed version string
-        "latest"       – the latest release version string from GitHub
-        "download_url" – direct download URL for the AppImage asset, or None
+    The returned dict always contains a ``"status"`` key with one of:
 
-    Returns None when Quickr is already up to date or when the check fails.
+    * ``"update_available"`` – a newer release exists on GitHub.
+      Additional keys: ``"current"``, ``"latest"``, ``"download_url"``.
+    * ``"up_to_date"`` – the installed version is already the latest.
+      Additional key: ``"current"``.
+    * ``"error"`` – the GitHub API could not be reached (network, proxy,
+      timeout, etc.).  Additional key: ``"message"`` with a human-readable
+      description of the failure.
     """
     result = get_latest_release()
     if result is None:
-        return None
+        return {
+            "status": "error",
+            "message": (
+                "Could not reach the GitHub API.\n"
+                "Check your internet connection or try again later."
+            ),
+        }
 
     latest, download_url = result
     if not latest:
-        return None
+        return {
+            "status": "error",
+            "message": "GitHub API returned an empty release tag.",
+        }
 
     if _parse_version(latest) > _parse_version(VERSION):
         return {
+            "status": "update_available",
             "current": VERSION,
             "latest": latest,
             "download_url": download_url,
         }
-    return None
+    return {"status": "up_to_date", "current": VERSION}
 
 
 def do_appimage_update(download_url: str, progress_cb=None) -> bool:

@@ -62,10 +62,17 @@ def _cmd_update():
     print(f"Quickr {VERSION} – checking for updates…")
     info = check_for_updates()
 
-    if info is None:
+    status = info.get("status")
+
+    if status == "error":
+        print(f"✗ Update check failed: {info['message']}", file=sys.stderr)
+        sys.exit(1)
+
+    if status == "up_to_date":
         print("✓ Already up to date.")
         return
 
+    # status == "update_available"
     print(
         f"  New version available: v{info['latest']}  (installed: v{info['current']})"
     )
