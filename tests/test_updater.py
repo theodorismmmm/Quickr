@@ -107,6 +107,101 @@ class TestGetLatestRelease(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class TestGetAllReleases(unittest.TestCase):
+    """get_all_releases() should return a list of release dicts with status info."""
+
+    def _fake_releases_response(self, releases_data: list) -> MagicMock:
+        payload = json.dumps(releases_data).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = payload
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        return mock_resp
+
+    def test_returns_empty_list_on_network_error(self):
+        with patch("urllib.request.urlopen", side_effect=OSError("no network")):
+            result = upd.get_all_releases()
+        self.assertEqual(result, [])
+
+    def test_marks_current_version_correctly(self):
+        releases_data = [
+            {
+                "tag_name": f"v{upd.VERSION}",
+                "assets": [],
+            }
+        ]
+        mock_resp = self._fake_releases_response(releases_data)
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = upd.get_all_releases()
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["version"], upd.VERSION)
+        self.assertEqual(result[0]["status"], "current")
+        self.assertTrue(result[0]["is_current"])
+
+    def test_marks_newer_version_correctly(self):
+        major = upd._parse_version(upd.VERSION)[0] + 1
+        newer = f"{major}.0.0"
+        releases_data = [
+            {
+                "tag_name": f"v{newer}",
+                "assets": [
+                    {"name": "Quickr.AppImage", "browser_download_url": "https://example.com/Quickr.AppImage"}
+                ],
+            }
+        ]
+        mock_resp = self._fake_releases_response(releases_data)
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = upd.get_all_releases()
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["status"], "newer")
+        self.assertFalse(result[0]["is_current"])
+        self.assertEqual(result[0]["download_url"], "https://example.com/Quickr.AppImage")
+
+    def test_marks_older_version_correctly(self):
+        releases_data = [
+            {
+                "tag_name": "v0.0.1",
+                "assets": [],
+            }
+        ]
+        mock_resp = self._fake_releases_response(releases_data)
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = upd.get_all_releases()
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["status"], "older")
+        self.assertFalse(result[0]["is_current"])
+        self.assertIsNone(result[0]["download_url"])
+
+    def test_returns_multiple_releases(self):
+        major = upd._parse_version(upd.VERSION)[0] + 1
+        newer = f"{major}.0.0"
+        releases_data = [
+            {"tag_name": f"v{newer}", "assets": []},
+            {"tag_name": f"v{upd.VERSION}", "assets": []},
+            {"tag_name": "v0.0.1", "assets": []},
+        ]
+        mock_resp = self._fake_releases_response(releases_data)
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = upd.get_all_releases()
+        self.assertEqual(len(result), 3)
+        statuses = [r["status"] for r in result]
+        self.assertIn("newer", statuses)
+        self.assertIn("current", statuses)
+        self.assertIn("older", statuses)
+
+    def test_release_without_appimage_asset_has_none_download_url(self):
+        releases_data = [
+            {
+                "tag_name": f"v{upd.VERSION}",
+                "assets": [{"name": "source.tar.gz", "browser_download_url": "https://example.com/source.tar.gz"}],
+            }
+        ]
+        mock_resp = self._fake_releases_response(releases_data)
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = upd.get_all_releases()
+        self.assertIsNone(result[0]["download_url"])
+
+
 class TestCheckForUpdates(unittest.TestCase):
     """check_for_updates() should return update info only when a newer
     version is available."""

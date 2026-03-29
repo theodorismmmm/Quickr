@@ -497,7 +497,7 @@ class QuickrBar(Gtk.Window):
         btn.set_relief(Gtk.ReliefStyle.NONE)
         btn.set_focus_on_click(False)
         btn.set_tooltip_text(
-            f"Quickr {upd.VERSION} – click to check for updates"
+            f"Quickr {upd.VERSION} – click to open Install Manager"
         )
         btn.connect("clicked", self._on_check_updates_clicked)
         return btn
@@ -533,145 +533,23 @@ class QuickrBar(Gtk.Window):
         return False
 
     def _on_check_updates_clicked(self, _btn) -> None:
-        """Handle a click on the update button or the tray menu item."""
-        import threading
-
-        # Show a 'checking…' state on the button while we query the API
+        """Open the Install Manager dialog."""
+        from install_manager import InstallManagerDialog
+        dlg = InstallManagerDialog(parent=self)
+        dlg.run()
+        # After the manager closes, reset the button state and re-run a
+        # background check so the button badge stays in sync.
+        self._update_info = None
         if self._update_btn is not None:
-            self._update_btn.set_label("⟳ Checking…")
-            self._update_btn.set_sensitive(False)
-
-        def _worker():
-            info = upd.check_for_updates()
-            GLib.idle_add(self._on_manual_check_done, info)
-
-        threading.Thread(target=_worker, daemon=True).start()
-
-    def _on_manual_check_done(self, info) -> bool:
-        """GTK-thread callback after a manual update check finishes."""
-        if self._update_btn is not None:
-            self._update_btn.set_sensitive(True)
-
-        if info is None:
-            # Reset label if no update was already known
-            if self._update_info is None and self._update_btn is not None:
-                self._update_btn.set_label("⟳ Updates")
-                self._update_btn.set_tooltip_text(
-                    f"Quickr {upd.VERSION} – up to date"
-                )
-            _show_info(
-                self,
-                "No updates available",
-                f"Quickr {upd.VERSION} is the latest version.",
+            self._update_btn.set_label("⟳ Updates")
+            ctx = self._update_btn.get_style_context()
+            ctx.remove_class("has-update")
+            self._update_btn.set_tooltip_text(
+                f"Quickr {upd.VERSION} – click to open Install Manager"
             )
-        else:
-            self._update_info = info
-            self._mark_update_available(info["latest"])
-            self._prompt_update(info)
-        return False
+        if upd.is_appimage():
+            GLib.timeout_add_seconds(1, self._bg_check_for_updates)
 
-    def _prompt_update(self, info: dict) -> None:
-        """Show a dialog asking the user whether to install the update."""
-        import webbrowser as wb
-
-        dlg = Gtk.MessageDialog(
-            transient_for=self,
-            flags=0,
-            message_type=Gtk.MessageType.INFO,
-            buttons=Gtk.ButtonsType.NONE,
-            text=f"Quickr v{info['latest']} is available",
-        )
-        dlg.format_secondary_text(
-            f"You have v{info['current']} installed.\n"
-            + (
-                "Click 'Update' to download and install the new AppImage."
-                if info.get("download_url")
-                else f"Visit the releases page to download the latest version."
-            )
-        )
-
-        dlg.add_button("Later", Gtk.ResponseType.CANCEL)
-        if info.get("download_url"):
-            dlg.add_button("Update", Gtk.ResponseType.OK)
-        else:
-            dlg.add_button("Open Releases Page", Gtk.ResponseType.OK)
-
-        response = dlg.run()
-        dlg.destroy()
-
-        if response == Gtk.ResponseType.OK:
-            if info.get("download_url"):
-                self._run_appimage_update(info)
-            else:
-                wb.open(upd.RELEASES_PAGE)
-
-    def _run_appimage_update(self, info: dict) -> None:
-        """Download and apply the AppImage update, showing a progress dialog."""
-        import threading
-
-        # Progress dialog
-        prog_dlg = Gtk.Dialog(
-            title="Updating Quickr…",
-            transient_for=self,
-            flags=Gtk.DialogFlags.MODAL,
-        )
-        prog_dlg.set_default_size(340, 80)
-        content = prog_dlg.get_content_area()
-        content.set_spacing(8)
-        content.set_margin_top(12)
-        content.set_margin_bottom(12)
-        content.set_margin_start(16)
-        content.set_margin_end(16)
-
-        lbl = Gtk.Label(label=f"Downloading Quickr v{info['latest']}…")
-        lbl.set_halign(Gtk.Align.START)
-        content.pack_start(lbl, False, False, 0)
-
-        progress = Gtk.ProgressBar()
-        progress.set_pulse_step(0.05)
-        content.pack_start(progress, False, False, 0)
-
-        prog_dlg.show_all()
-        # Pulse while waiting for size info
-        pulse_id = GLib.timeout_add(80, lambda: (progress.pulse() or True))
-
-        result: dict = {"ok": None}
-
-        def _progress_cb(done: int, total: int) -> None:
-            if total > 0:
-                GLib.idle_add(progress.set_fraction, done / total)
-
-        def _worker() -> None:
-            ok = upd.do_appimage_update(info["download_url"], _progress_cb)
-            result["ok"] = ok
-            GLib.idle_add(_finish)
-
-        def _finish() -> None:
-            GLib.source_remove(pulse_id)
-            prog_dlg.destroy()
-            if result["ok"]:
-                _show_info(
-                    self,
-                    "Update installed",
-                    f"Quickr v{info['latest']} has been installed.\n"
-                    "Please restart the application to use the new version.",
-                )
-                # Reset button state
-                self._update_info = None
-                if self._update_btn is not None:
-                    self._update_btn.set_label("⟳ Updates")
-                    ctx = self._update_btn.get_style_context()
-                    ctx.remove_class("has-update")
-                    self._update_btn.set_tooltip_text(
-                        f"Quickr {info['latest']} – restart to apply update"
-                    )
-            else:
-                _show_error(
-                    self,
-                    f"Download failed.\nPlease visit:\n{upd.RELEASES_PAGE}",
-                )
-
-        threading.Thread(target=_worker, daemon=True).start()
 
     def _on_btn_clicked(self, _btn, shortcut):
         try:
