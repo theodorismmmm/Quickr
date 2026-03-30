@@ -28,15 +28,21 @@ import updater as upd
 # Styling
 # ---------------------------------------------------------------------------
 
-def _make_css(transparency: float) -> bytes:
-    """Generate bar CSS with configurable background transparency."""
+def _make_css(transparency: float, notch_style: str = "standard") -> bytes:
+    """Generate bar CSS with configurable background transparency and notch style."""
     alpha = max(0.0, min(1.0, transparency))
+    if notch_style == "dynamic_island":
+        bar_radius = "20px"
+        bar_border = "none"
+    else:
+        bar_radius = "0 0 20px 20px"
+        bar_border = "1px solid rgba(255,255,255,0.08)"
     return f"""
 /* ---- Quickr Minibar ---- */
 .quickr-bar {{
     background-color: rgba(12, 12, 12, {alpha:.2f});
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    border-radius: 0 0 20px 20px;
+    border-bottom: {bar_border};
+    border-radius: {bar_radius};
 }}
 
 .quickr-btn {{
@@ -103,6 +109,38 @@ tooltip {{
     padding: 2px 6px;
     font-size: 11px;
 }}
+
+.quickr-console-output {{
+    background-color: rgba(8, 8, 8, 0.97);
+    color: #00e676;
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-family: monospace;
+    font-size: 10px;
+}}
+
+.quickr-console-btn {{
+    background: rgba(255,255,255,0.06);
+    border: none;
+    border-radius: 6px;
+    padding: 3px 8px;
+    margin: 0 2px;
+    min-width: 0;
+    min-height: 0;
+    color: #aaaaaa;
+    font-size: 11px;
+    font-family: monospace;
+}}
+
+.quickr-console-btn:hover {{
+    background-color: rgba(0,230,118,0.15);
+    color: #00e676;
+}}
+
+.quickr-console-btn.active {{
+    background-color: rgba(0,230,118,0.18);
+    color: #00e676;
+}}
 """.encode()
 
 BUTTON_PAD = 8   # px horizontal gap between buttons
@@ -117,6 +155,8 @@ BUILTIN_LABELS = {
     "date":      "Date",
     "stopwatch": "Elapsed",
 }
+
+CONSOLE_EXTRA_HEIGHT = 120   # extra px added to bar height when console is visible
 
 
 def _builtin_text(widget_id: str, start_time: float) -> str:
@@ -166,7 +206,8 @@ def _open_shortcut(shortcut: dict) -> None:
 def _open_url(url: str) -> None:
     """Open a URL using the browser configured in settings."""
     settings = cfg.get_settings()
-    browser = settings.get("browser", "default")
+    chrome_only = settings.get("chrome_only", False)
+    browser = "chrome" if chrome_only else settings.get("browser", "default")
 
     # Multiple candidate binary names per browser, tried in order.
     _BROWSER_CANDIDATES = {
@@ -182,7 +223,13 @@ def _open_url(url: str) -> None:
                 return
             except FileNotFoundError:
                 continue
-        # None of the candidates found – fall through to system default
+        # None of the configured browser's binaries were found.
+        if chrome_only:
+            # No fallback allowed – surface a clear error to the user.
+            raise RuntimeError(
+                "Chrome not found. Install Google Chrome or disable Chrome-only mode in Settings."
+            )
+        # For other browsers, fall through to the system default.
 
     webbrowser.open(url)
 
@@ -200,6 +247,7 @@ class QuickrBar(Gtk.Window):
         self._builtin_labels: dict = {}   # widget_id -> Gtk.Label
         self._timer_id = None
         self._css_provider = Gtk.CssProvider()
+        self._console_visible = False
         # Update state (AppImage only)
         self._update_info = None   # pending update metadata
         self._update_btn  = None
@@ -220,7 +268,8 @@ class QuickrBar(Gtk.Window):
 
     def _apply_style(self):
         transparency = self._settings.get("transparency", 0.96)
-        self._css_provider.load_from_data(_make_css(transparency))
+        notch_style  = self._settings.get("notch_style", "standard")
+        self._css_provider.load_from_data(_make_css(transparency, notch_style))
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(),
             self._css_provider,
@@ -231,7 +280,8 @@ class QuickrBar(Gtk.Window):
         """Re-apply CSS after a settings change."""
         self._settings = cfg.get_settings()
         transparency = self._settings.get("transparency", 0.96)
-        self._css_provider.load_from_data(_make_css(transparency))
+        notch_style  = self._settings.get("notch_style", "standard")
+        self._css_provider.load_from_data(_make_css(transparency, notch_style))
 
     def _build_window(self):
         self.set_title("Quickr")
@@ -255,6 +305,7 @@ class QuickrBar(Gtk.Window):
 
         self.connect("destroy", self._on_destroy)
         self.connect("draw", self._on_draw)
+        self.connect("key-press-event", self._on_key_press)
 
     def _on_destroy(self, _w):
         if self._timer_id is not None:
@@ -270,8 +321,11 @@ class QuickrBar(Gtk.Window):
         return False
 
     def _build_bar(self):
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        root.get_style_context().add_class("quickr-bar")
+
+        # ── Button row ──────────────────────────────────────────────────
         outer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        outer.get_style_context().add_class("quickr-bar")
         outer.set_margin_top(0)
         outer.set_margin_bottom(0)
 
@@ -285,8 +339,65 @@ class QuickrBar(Gtk.Window):
         self._btn_box.set_margin_bottom(4)
 
         outer.pack_start(self._btn_box, False, False, 0)
-        self.add(outer)
 
+        # Console toggle button (>_)
+        self._console_btn = Gtk.Button(label=">_")
+        self._console_btn.get_style_context().add_class("quickr-console-btn")
+        self._console_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self._console_btn.set_focus_on_click(False)
+        self._console_btn.set_tooltip_text("Toggle mini console (Ctrl+`)")
+        self._console_btn.connect("clicked", lambda _b: self._toggle_console())
+        outer.pack_end(self._console_btn, False, False, 4)
+
+        root.pack_start(outer, False, False, 0)
+
+        # ── Console panel (hidden by default) ────────────────────────────
+        self._console_panel = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=4
+        )
+        self._console_panel.set_margin_start(10)
+        self._console_panel.set_margin_end(10)
+        self._console_panel.set_margin_top(2)
+        self._console_panel.set_margin_bottom(6)
+        self._console_panel.set_no_show_all(True)
+
+        # Output text view
+        self._console_buf = Gtk.TextBuffer()
+        self._console_buf.set_text("Quickr mini-console (Ctrl+` to toggle)\n")
+        console_view = Gtk.TextView(buffer=self._console_buf)
+        console_view.set_editable(False)
+        console_view.set_cursor_visible(False)
+        console_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        console_view.get_style_context().add_class("quickr-console-output")
+
+        scroll_out = Gtk.ScrolledWindow()
+        scroll_out.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll_out.set_size_request(-1, 80)
+        scroll_out.add(console_view)
+        self._console_panel.pack_start(scroll_out, True, True, 0)
+        self._console_view = console_view
+
+        # Input row
+        input_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        prompt = Gtk.Label(label="$")
+        prompt.set_opacity(0.6)
+        input_row.pack_start(prompt, False, False, 2)
+
+        self._console_entry = Gtk.Entry()
+        self._console_entry.set_placeholder_text("enter command…")
+        self._console_entry.set_hexpand(True)
+        self._console_entry.connect("activate", self._on_console_cmd)
+        input_row.pack_start(self._console_entry, True, True, 0)
+
+        run_btn = Gtk.Button(label="Run")
+        run_btn.get_style_context().add_class("quickr-console-btn")
+        run_btn.connect("clicked", self._on_console_cmd)
+        input_row.pack_start(run_btn, False, False, 0)
+
+        self._console_panel.pack_start(input_row, False, False, 0)
+        root.pack_start(self._console_panel, False, False, 0)
+
+        self.add(root)
         self._load_shortcuts()
 
     # ------------------------------------------------------------------
@@ -562,6 +673,73 @@ class QuickrBar(Gtk.Window):
         if upd.is_appimage():
             GLib.timeout_add_seconds(1, self._bg_check_for_updates)
 
+    # ------------------------------------------------------------------
+    # Mini console
+    # ------------------------------------------------------------------
+
+    def _toggle_console(self):
+        """Show or hide the mini console panel and resize the bar accordingly."""
+        self._console_visible = not self._console_visible
+        if self._console_visible:
+            self._console_panel.show()
+            self._console_btn.get_style_context().add_class("active")
+            GLib.idle_add(self._console_entry.grab_focus)
+        else:
+            self._console_panel.hide()
+            self._console_btn.get_style_context().remove_class("active")
+        GLib.idle_add(self._reposition_for_console)
+
+    def _reposition_for_console(self) -> bool:
+        bar_height = self._settings.get("bar_height", 48)
+        if self._console_visible:
+            bar_height += CONSOLE_EXTRA_HEIGHT
+        self._position(bar_height)
+        return False
+
+    def _on_console_cmd(self, _widget=None):
+        """Run the command typed in the console entry and append output."""
+        import shlex
+        cmd = self._console_entry.get_text().strip()
+        if not cmd:
+            return
+        self._console_entry.set_text("")
+
+        end_iter = self._console_buf.get_end_iter()
+        self._console_buf.insert(end_iter, f"$ {cmd}\n")
+
+        try:
+            args = shlex.split(cmd)
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            output = result.stdout or ""
+            if result.stderr:
+                output += result.stderr
+        except subprocess.TimeoutExpired:
+            output = "(command timed out after 10 seconds)\n"
+        except Exception as exc:
+            output = f"(error: {exc})\n"
+
+        if output and not output.endswith("\n"):
+            output += "\n"
+        end_iter = self._console_buf.get_end_iter()
+        self._console_buf.insert(end_iter, output if output else "(no output)\n")
+
+        # Scroll to end
+        adj = self._console_view.get_vadjustment()
+        if adj:
+            GLib.idle_add(lambda: adj.set_value(adj.get_upper()))
+
+    def _on_key_press(self, _widget, event):
+        """Handle global bar keyboard shortcuts."""
+        ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        if ctrl and event.keyval == Gdk.KEY_grave:
+            self._toggle_console()
+            return True
+        return False
 
     def _on_btn_clicked(self, _btn, shortcut):
         try:
@@ -576,6 +754,8 @@ class QuickrBar(Gtk.Window):
     def _position(self, bar_height: int = None):
         if bar_height is None:
             bar_height = self._settings.get("bar_height", 48)
+            if self._console_visible:
+                bar_height += CONSOLE_EXTRA_HEIGHT
         screen = Gdk.Screen.get_default()
         mon    = screen.get_primary_monitor()
         geom   = screen.get_monitor_geometry(mon)
@@ -584,6 +764,8 @@ class QuickrBar(Gtk.Window):
         self._btn_box.queue_resize()
         nat_w = self._btn_box.get_preferred_width()[1]
         nat_w += 24   # margins
+        # console toggle button
+        nat_w += self._console_btn.get_preferred_width()[1] + 12
 
         bar_w = max(nat_w, 120)
         bar_x = geom.x + (geom.width - bar_w) // 2

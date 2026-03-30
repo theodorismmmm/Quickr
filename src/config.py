@@ -100,6 +100,11 @@ BUILTIN_WIDGET_IDS = ("clock", "date", "stopwatch")
 # "default" means use the system default browser (xdg-open / webbrowser).
 BROWSER_OPTIONS = ("default", "chrome", "chromium", "firefox")
 
+# Notch / bar appearance styles.
+# "standard"       – full-width bar flush with the top edge (default).
+# "dynamic_island" – pill-shaped centred notch, inspired by Apple's Dynamic Island.
+NOTCH_STYLES = ("standard", "dynamic_island")
+
 DEFAULT_SETTINGS: dict = {
     "transparency": 0.96,
     "icon_size": 28,
@@ -107,6 +112,8 @@ DEFAULT_SETTINGS: dict = {
     "show_on_startup": True,
     "builtin_widgets": [],
     "browser": "default",
+    "notch_style": "standard",
+    "chrome_only": False,
 }
 
 
