@@ -211,6 +211,32 @@ class TestSettings(unittest.TestCase):
         for opt in ("default", "chrome", "chromium", "firefox"):
             self.assertIn(opt, cfg.BROWSER_OPTIONS)
 
+    def test_notch_style_default_is_standard(self):
+        s = cfg.get_settings()
+        self.assertEqual(s.get("notch_style"), "standard")
+
+    def test_notch_style_saved_and_loaded(self):
+        settings = cfg.get_settings()
+        settings["notch_style"] = "dynamic_island"
+        cfg.save_settings(settings)
+        loaded = cfg.get_settings()
+        self.assertEqual(loaded["notch_style"], "dynamic_island")
+
+    def test_notch_styles_constant(self):
+        for style in ("standard", "dynamic_island"):
+            self.assertIn(style, cfg.NOTCH_STYLES)
+
+    def test_chrome_only_default_is_false(self):
+        s = cfg.get_settings()
+        self.assertFalse(s.get("chrome_only"))
+
+    def test_chrome_only_saved_and_loaded(self):
+        settings = cfg.get_settings()
+        settings["chrome_only"] = True
+        cfg.save_settings(settings)
+        loaded = cfg.get_settings()
+        self.assertTrue(loaded["chrome_only"])
+
 
 class TestSudoFlag(unittest.TestCase):
     """Tests for the per-shortcut sudo flag."""

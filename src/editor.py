@@ -559,12 +559,20 @@ class QuickrEditor(Gtk.Window):
     # ------------------------------------------------------------------
 
     def _make_tab_settings(self) -> Gtk.Widget:
+        # Outer container: scrollable content + sticky apply button
+        tab_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        tab_box.get_style_context().add_class("qe-settings-area")
+
+        # ── Scrollable settings area ────────────────────────────────────
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_vexpand(True)
+
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        outer.get_style_context().add_class("qe-settings-area")
         outer.set_margin_start(24)
         outer.set_margin_end(24)
         outer.set_margin_top(20)
-        outer.set_margin_bottom(20)
+        outer.set_margin_bottom(12)
 
         heading = Gtk.Label(label="Bar Settings")
         heading.set_halign(Gtk.Align.START)
@@ -641,6 +649,19 @@ class QuickrEditor(Gtk.Window):
         outer.pack_start(startup_row, False, False, 0)
         self._spacer_in(outer, 20)
 
+        # -- Notch Style --
+        outer.pack_start(self._settings_label("NOTCH STYLE"), False, False, 0)
+        outer.pack_start(self._settings_sublabel(
+            "Standard: full-width bar at top edge. Dynamic Island: centred pill (Apple-inspired)."
+        ), False, False, 0)
+
+        self._notch_combo = Gtk.ComboBoxText()
+        self._notch_combo.append("standard",       "Standard")
+        self._notch_combo.append("dynamic_island", "Dynamic Island")
+        self._notch_combo.set_active_id(settings.get("notch_style", "standard") or "standard")
+        outer.pack_start(self._notch_combo, False, False, 0)
+        self._spacer_in(outer, 20)
+
         # -- Browser --
         outer.pack_start(self._settings_label("URL BROWSER"), False, False, 0)
         outer.pack_start(self._settings_sublabel(
@@ -652,16 +673,50 @@ class QuickrEditor(Gtk.Window):
             self._browser_combo.append(opt, opt.capitalize() if opt != "default" else "System Default")
         self._browser_combo.set_active_id(settings.get("browser", "default") or "default")
         outer.pack_start(self._browser_combo, False, False, 0)
-        self._spacer_in(outer, 28)
+        self._spacer_in(outer, 16)
 
-        # Apply button
-        apply_btn = Gtk.Button(label="Apply Settings")
+        # -- Chrome Only --
+        chrome_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        chrome_lbl_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        chrome_lbl_col.set_hexpand(True)
+        chrome_lbl_col.pack_start(self._settings_label("CHROME ONLY"), False, False, 0)
+        chrome_lbl_col.pack_start(
+            self._settings_sublabel(
+                "Force all URL shortcuts to open exclusively in Chrome (no system-default fallback)"
+            ),
+            False, False, 0,
+        )
+        chrome_row.pack_start(chrome_lbl_col, True, True, 0)
+        self._chrome_only_switch = Gtk.Switch()
+        self._chrome_only_switch.set_active(bool(settings.get("chrome_only", False)))
+        self._chrome_only_switch.set_valign(Gtk.Align.CENTER)
+        chrome_row.pack_start(self._chrome_only_switch, False, False, 0)
+        outer.pack_start(chrome_row, False, False, 0)
+        self._spacer_in(outer, 8)
+
+        scroll.add(outer)
+        tab_box.pack_start(scroll, True, True, 0)
+
+        # ── Sticky Apply button (always visible at the bottom) ──────────
+        apply_sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        apply_sep.set_opacity(0.15)
+        tab_box.pack_start(apply_sep, False, False, 0)
+
+        apply_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        apply_row.set_margin_start(24)
+        apply_row.set_margin_end(24)
+        apply_row.set_margin_top(10)
+        apply_row.set_margin_bottom(10)
+
+        apply_btn = Gtk.Button(label="✓  Apply Settings")
         apply_btn.get_style_context().add_class("qe-btn-primary")
-        apply_btn.set_halign(Gtk.Align.START)
+        apply_btn.set_hexpand(True)
         apply_btn.connect("clicked", self._on_apply_settings)
-        outer.pack_start(apply_btn, False, False, 0)
+        apply_row.pack_start(apply_btn, True, True, 0)
 
-        return outer
+        tab_box.pack_start(apply_row, False, False, 0)
+
+        return tab_box
 
     def _settings_label(self, text: str) -> Gtk.Label:
         lbl = Gtk.Label(label=text)
@@ -885,7 +940,9 @@ class QuickrEditor(Gtk.Window):
         settings["icon_size"]      = int(self._icon_scale.get_value())
         settings["bar_height"]     = int(self._height_scale.get_value())
         settings["show_on_startup"] = self._startup_switch.get_active()
+        settings["notch_style"]    = self._notch_combo.get_active_id() or "standard"
         settings["browser"]        = self._browser_combo.get_active_id() or "default"
+        settings["chrome_only"]    = self._chrome_only_switch.get_active()
         cfg.save_settings(settings)
 
         dlg = Gtk.MessageDialog(
