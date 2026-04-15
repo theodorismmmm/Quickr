@@ -148,6 +148,8 @@ It builds a Windows `.exe` with PyInstaller:
 - On tag pushes matching `v*` (also uploads to the GitHub release)
 - On manual runs via **workflow_dispatch** (uploads as workflow artifact)
 
+> **Note:** this workflow excludes `gi` during packaging because Quickr’s GTK/PyGObject runtime is Linux-oriented and not bundled in this Windows artifact.
+
 ---
 
 ## Project layout

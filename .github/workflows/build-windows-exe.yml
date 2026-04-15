@@ -30,6 +30,8 @@ jobs:
       - name: Build Windows executable
         shell: powershell
         run: |
+          # Quickr's GTK runtime (gi/PyGObject) is Linux-oriented and not bundled here.
+          # This build intentionally excludes gi so CI can still produce a Windows .exe artifact.
           pyinstaller `
             --noconfirm `
             --clean `
