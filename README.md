@@ -137,6 +137,22 @@ bash build-appimage.sh
 
 ---
 
+## Build a Windows executable (GitHub Action)
+
+A GitHub Actions workflow is available at:
+
+`.github/workflows/build-windows-exe.yml`
+
+It builds a Windows `.exe` with PyInstaller:
+
+- On tag pushes matching `v*` (also uploads to the GitHub release)
+- On manual runs via **workflow_dispatch** (uploads as workflow artifact)
+
+> **Note:** this workflow excludes `gi` during packaging because Quickr’s GTK/PyGObject runtime is Linux-oriented and not bundled in this Windows artifact.  
+> The produced `.exe` is mainly for distribution/testing pipelines and does **not** provide the full GTK bar/editor experience on Windows.
+
+---
+
 ## Project layout
 
 ```

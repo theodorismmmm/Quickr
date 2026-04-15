@@ -1,0 +1,61 @@
+name: Build Windows EXE
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+
+      - name: Build Windows executable
+        shell: powershell
+        run: |
+          # Quickr's GTK runtime (gi/PyGObject) is Linux-oriented and not bundled here.
+          # This build intentionally excludes gi so CI can still produce a Windows .exe artifact.
+          pyinstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --name Quickr `
+            --paths src `
+            quickr.py `
+            --exclude-module gi
+          if (-not (Test-Path VERSION)) { throw "VERSION file not found at repository root (expected: ./VERSION)." }
+          $version = (Get-Content VERSION).Trim()
+          if (-not $version) { throw "VERSION file is empty; set a version string in ./VERSION before building." }
+          $artifactName = "Quickr-$version-windows-x86_64.exe"
+          Move-Item "dist/Quickr.exe" $artifactName
+          "ARTIFACT_NAME=$artifactName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload EXE as release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARTIFACT_NAME }}
+
+      - name: Upload EXE as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_NAME }}
+          retention-days: 30
