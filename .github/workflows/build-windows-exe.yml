@@ -37,9 +37,10 @@ jobs:
             --clean `
             --onefile `
             --name Quickr `
-            quickr.py `
             --paths src `
+            quickr.py `
             --exclude-module gi
+          if (-not (Test-Path VERSION)) { throw "VERSION file not found" }
           $version = (Get-Content VERSION).Trim()
           if (-not $version) { throw "VERSION file is empty" }
           $artifactName = "Quickr-$version-windows-x86_64.exe"
