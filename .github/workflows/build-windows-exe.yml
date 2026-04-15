@@ -40,9 +40,9 @@ jobs:
             --paths src `
             quickr.py `
             --exclude-module gi
-          if (-not (Test-Path VERSION)) { throw "VERSION file not found" }
+          if (-not (Test-Path VERSION)) { throw "VERSION file not found at repository root (expected: ./VERSION)." }
           $version = (Get-Content VERSION).Trim()
-          if (-not $version) { throw "VERSION file is empty" }
+          if (-not $version) { throw "VERSION file is empty; set a version string in ./VERSION before building." }
           $artifactName = "Quickr-$version-windows-x86_64.exe"
           Move-Item "dist/Quickr.exe" $artifactName
           "ARTIFACT_NAME=$artifactName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
