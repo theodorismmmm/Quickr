@@ -137,6 +137,19 @@ bash build-appimage.sh
 
 ---
 
+## Build a Windows executable (GitHub Action)
+
+A GitHub Actions workflow is available at:
+
+`.github/workflows/build-windows-exe.yml`
+
+It builds a Windows `.exe` with PyInstaller:
+
+- On tag pushes matching `v*` (also uploads to the GitHub release)
+- On manual runs via **workflow_dispatch** (uploads as workflow artifact)
+
+---
+
 ## Project layout
 
 ```
