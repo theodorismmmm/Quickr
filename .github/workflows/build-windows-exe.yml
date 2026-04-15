@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install build dependency
+      - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install pyinstaller
@@ -30,7 +30,14 @@ jobs:
       - name: Build Windows executable
         shell: powershell
         run: |
-          pyinstaller --noconfirm --clean --onefile --name Quickr quickr.py --paths src --exclude-module gi
+          pyinstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --name Quickr `
+            quickr.py `
+            --paths src `
+            --exclude-module gi
           $version = (Get-Content VERSION).Trim()
           if (-not $version) { throw "VERSION file is empty" }
           $artifactName = "Quickr-$version-windows-x86_64.exe"
