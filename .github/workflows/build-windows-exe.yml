@@ -32,14 +32,10 @@ jobs:
             mingw-w64-ucrt-x86_64-librsvg
             mingw-w64-ucrt-x86_64-python-pyinstaller
 
-      - name: Install build dependencies
-        shell: msys2 {0}
-        run: |
-          python -m pip install --upgrade pip
-
       - name: Build Windows executable
         shell: msys2 {0}
         run: |
+          echo "Validating GTK/PyGObject runtime availability..."
           python -c "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk"
           pyinstaller \
             --noconfirm \
@@ -61,7 +57,8 @@ jobs:
             exit 1
           fi
 
-          version="$(tr -d '\r\n' < VERSION)"
+          IFS= read -r version < VERSION
+          version="${version//$'\r'/}"
           if [ -z "$version" ]; then
             echo "VERSION file is empty; set a version string in ./VERSION before building." >&2
             exit 1
