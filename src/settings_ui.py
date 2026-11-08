@@ -240,7 +240,13 @@ class SettingsWindow(QWidget):
         self.phone_list.clear()
         for d in devices:
             tag = "iPhone" if d.is_iphone else "Device"
-            item = QListWidgetItem(f"[{tag}] {d.name}")
+            if getattr(d, "is_connected", False):
+                state = "connected"
+            elif getattr(d, "is_present", False):
+                state = "in range"
+            else:
+                state = "paired"
+            item = QListWidgetItem(f"[{tag} · {state}] {d.name}")
             item.setData(Qt.UserRole, d.address)
             item.setData(Qt.UserRole + 1, d.name)
             self.phone_list.addItem(item)
