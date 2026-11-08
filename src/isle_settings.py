@@ -1,4 +1,4 @@
-"""Persistent Isle settings (YouTube Music + WhatsApp)."""
+"""Persistent Isle settings (styles, media, WhatsApp, iPhone Connect, timer)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+
+from isle_styles import DEFAULT_STYLE_ID
 
 
 def _config_dir() -> Path:
@@ -19,12 +21,18 @@ CONFIG_DIR = _config_dir()
 CONFIG_FILE = CONFIG_DIR / "settings.json"
 
 DEFAULTS: dict[str, Any] = {
+    "style_id": DEFAULT_STYLE_ID,
     "youtube_music_enabled": True,
     "youtube_music_prefer": True,
     "youtube_music_url": "https://music.youtube.com",
     "whatsapp_toasts_enabled": True,
     "whatsapp_reply_enabled": True,
     "whatsapp_uri": "whatsapp:",
+    "iphone_connect_enabled": False,
+    "iphone_device_address": "",
+    "iphone_device_name": "",
+    "timer_default_minutes": 5,
+    "always_on_top": True,
 }
 
 
