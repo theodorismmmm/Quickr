@@ -1,5 +1,8 @@
 name: Build Windows EXE
 
+# Builds Isle — the Windows Dynamic Island (PySide6 + winsdk).
+# The old Quickr GTK entrypoint excludes gi and never draws on Windows.
+
 on:
   push:
     tags:
@@ -22,30 +25,45 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install build dependencies
+      - name: Install Isle + build dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyinstaller
+          python -m pip install -r requirements.txt pyinstaller
+          python -c "import PySide6; print('PySide6', PySide6.__version__)"
+          python -c "import winsdk; print('winsdk ok')"
 
-      - name: Build Windows executable
+      - name: Build Isle Windows executable
         shell: powershell
         run: |
-          # Quickr's GTK runtime (gi/PyGObject) is Linux-oriented and not bundled here.
-          # This build intentionally excludes gi so CI can still produce a Windows .exe artifact.
+          # Isle is the PySide6 Dynamic Island. Do NOT exclude PySide6.
+          # Do NOT package quickr.py / exclude gi — that artifact never draws.
           pyinstaller `
             --noconfirm `
             --clean `
             --onefile `
-            --name Quickr `
+            --windowed `
+            --name Isle `
             --paths src `
-            quickr.py `
-            --exclude-module gi
+            --add-data "VERSION;." `
+            --collect-all PySide6 `
+            --collect-all winsdk `
+            --hidden-import media `
+            --hidden-import island `
+            --hidden-import isle_settings `
+            --hidden-import settings_ui `
+            isle.py
+          if (-not (Test-Path "dist/Isle.exe")) { throw "PyInstaller did not produce dist/Isle.exe" }
           if (-not (Test-Path VERSION)) { throw "VERSION file not found at repository root (expected: ./VERSION)." }
           $version = (Get-Content VERSION).Trim()
           if (-not $version) { throw "VERSION file is empty; set a version string in ./VERSION before building." }
-          $artifactName = "Quickr-$version-windows-x86_64.exe"
-          Move-Item "dist/Quickr.exe" $artifactName
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $artifactName = "Isle-$version-$sha-windows-x86_64.exe"
+          Move-Item "dist/Isle.exe" $artifactName -Force
+          Get-Item $artifactName | Format-List Name, Length, LastWriteTime
+          # Sanity: ensure PySide6 / island modules were pulled in (spec next to dist).
+          if (-not (Test-Path "Isle.spec")) { Write-Warning "Isle.spec missing (non-fatal)" }
           "ARTIFACT_NAME=$artifactName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ISLE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Upload EXE as release asset
         if: startsWith(github.ref, 'refs/tags/')

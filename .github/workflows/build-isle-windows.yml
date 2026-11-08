@@ -27,6 +27,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller
           python -c "import PySide6; print('PySide6', PySide6.__version__)"
+          python -c "import winsdk; print('winsdk ok')"
 
       - name: Build Isle executable
         shell: powershell
@@ -40,7 +41,8 @@ jobs:
             --windowed `
             --name Isle `
             --paths src `
-            --collect-all PySide6 `
+            --add-data "VERSION;." `
+            --collect of-all PySide6 `
             --collect-all winsdk `
             --hidden-import media `
             --hidden-import island `
@@ -51,7 +53,8 @@ jobs:
           if (-not (Test-Path VERSION)) { throw "VERSION file not found at repository root (expected: ./VERSION)." }
           $version = (Get-Content VERSION).Trim()
           if (-not $version) { throw "VERSION file is empty; set a version string in ./VERSION before building." }
-          $artifactName = "Isle-$version-windows-x86_64.exe"
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $artifactName = "Isle-$version-$sha-windows-x86_64.exe"
           Move-Item "dist/Isle.exe" $artifactName -Force
           Get-Item $artifactName | Format-List Name, Length, LastWriteTime
           "ARTIFACT_NAME=$artifactName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
