@@ -1,0 +1,64 @@
+name: Build Isle Windows EXE
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-isle-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build Isle executable
+        shell: powershell
+        run: |
+          # Isle is the PySide6 Dynamic Island — do not exclude PySide6.
+          pyinstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --windowed `
+            --name Isle `
+            --paths src `
+            --collect-all PySide6 `
+            --collect-all winsdk `
+            --hidden-import media `
+            --hidden-import island `
+            isle.py
+          if (-not (Test-Path VERSION)) { throw "VERSION file not found at repository root (expected: ./VERSION)." }
+          $version = (Get-Content VERSION).Trim()
+          if (-not $version) { throw "VERSION file is empty; set a version string in ./VERSION before building." }
+          $artifactName = "Isle-$version-windows-x86_64.exe"
+          Move-Item "dist/Isle.exe" $artifactName
+          "ARTIFACT_NAME=$artifactName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload EXE as release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARTIFACT_NAME }}
+
+      - name: Upload EXE as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_NAME }}
+          retention-days: 30
