@@ -31,6 +31,7 @@ jobs:
         shell: powershell
         run: |
           # Isle is the PySide6 Dynamic Island — do not exclude PySide6.
+          # Bundles media session (winsdk), tray Setup UI (YouTube Music / WhatsApp).
           pyinstaller `
             --noconfirm `
             --clean `
@@ -42,6 +43,8 @@ jobs:
             --collect-all winsdk `
             --hidden-import media `
             --hidden-import island `
+            --hidden-import isle_settings `
+            --hidden-import settings_ui `
             isle.py
           if (-not (Test-Path VERSION)) { throw "VERSION file not found at repository root (expected: ./VERSION)." }
           $version = (Get-Content VERSION).Trim()
