@@ -423,10 +423,11 @@ class IslandWindow(QWidget):
     media_updated = Signal(object)
     toast_received = Signal(object)
 
-    def __init__(self) -> None:
+    def __init__(self, version: str = "0.0.0") -> None:
         super().__init__()
+        self._version = version
         self.setObjectName("IsleWindow")
-        self.setWindowTitle("Isle")
+        self.setWindowTitle(f"Isle {version}")
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setWindowFlags(
@@ -639,8 +640,12 @@ class IslandWindow(QWidget):
         pix = QPixmap(16, 16)
         pix.fill(FILL)
         self._tray = QSystemTrayIcon(QIcon(pix), self)
-        self._tray.setToolTip("Isle")
+        self._tray.setToolTip(f"Isle {self._version}")
         menu = QMenu()
+        about = QAction(f"Isle {self._version}", menu)
+        about.setEnabled(False)
+        menu.addAction(about)
+        menu.addSeparator()
         setup_action = QAction("Setup (YouTube Music / WhatsApp)…", menu)
         setup_action.triggered.connect(self.open_settings)
         menu.addAction(setup_action)
@@ -1037,13 +1042,14 @@ class SingleInstance:
             self._server = None
 
 
-def run() -> int:
+def run(version: str = "0.0.0") -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("Isle")
+    app.setApplicationVersion(version)
     app.setOrganizationName("Quickr")
 
     guard = SingleInstance()
@@ -1051,7 +1057,7 @@ def run() -> int:
         log.error("Isle is already running")
         return 1
 
-    window = IslandWindow()
+    window = IslandWindow(version=version)
     window.show()
 
     code = app.exec()
