@@ -42,7 +42,7 @@ jobs:
             --name Isle `
             --paths src `
             --add-data "VERSION;." `
-            --collect of-all PySide6 `
+            --collect-all PySide6 `
             --collect-all winsdk `
             --hidden-import media `
             --hidden-import island `
