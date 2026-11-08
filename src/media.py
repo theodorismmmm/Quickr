@@ -62,6 +62,8 @@ def _friendly_source(app_id: Optional[str]) -> str:
     mapping = (
         ("spotify", "Spotify"),
         ("youtubemusic", "YouTube Music"),
+        ("youtube.music", "YouTube Music"),
+        ("music.youtube", "YouTube Music"),
         ("youtube", "YouTube"),
         ("chrome", "Chrome"),
         ("msedge", "Edge"),
@@ -89,6 +91,16 @@ def _friendly_source(app_id: Optional[str]) -> str:
     return base or "Media"
 
 
+def _is_youtube_music(app_id: Optional[str]) -> bool:
+    if not app_id:
+        return False
+    lower = app_id.lower()
+    return any(
+        token in lower
+        for token in ("youtubemusic", "youtube.music", "music.youtube", "youtube music")
+    )
+
+
 def _timedelta_seconds(value) -> float:
     if value is None:
         return 0.0
@@ -110,11 +122,13 @@ class MediaService:
         on_toast: Optional[Callable[[ToastInfo], None]] = None,
         media_interval: float = 0.4,
         toast_interval: float = 1.5,
+        settings: Optional[dict] = None,
     ) -> None:
         self._on_media = on_media
         self._on_toast = on_toast
         self._media_interval = media_interval
         self._toast_interval = toast_interval
+        self._settings = dict(settings or {})
 
         self._thread: Optional[threading.Thread] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -127,6 +141,9 @@ class MediaService:
         self._seen_toast_ids: set[int] = set()
         self._toasts_enabled = False
         self._last_info = MediaInfo()
+
+    def apply_settings(self, settings: dict) -> None:
+        self._settings = dict(settings or {})
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -240,6 +257,41 @@ class MediaService:
     # Media polling / controls
     # ------------------------------------------------------------------
 
+    def _pick_session(self, manager):
+        """Choose the active session, optionally preferring YouTube Music."""
+        current = manager.get_current_session()
+        try:
+            sessions = list(manager.get_sessions() or [])
+        except Exception:
+            sessions = [current] if current is not None else []
+
+        prefer_ytm = bool(self._settings.get("youtube_music_prefer", True))
+        ytm_enabled = bool(self._settings.get("youtube_music_enabled", True))
+
+        ytm_sessions = [
+            s for s in sessions if s is not None and _is_youtube_music(s.source_app_user_model_id)
+        ]
+
+        if prefer_ytm and ytm_enabled and ytm_sessions:
+            # Prefer a playing YTM session, else first YTM session.
+            for s in ytm_sessions:
+                try:
+                    pb = s.get_playback_info()
+                    if pb is not None and int(pb.playback_status) == _PLAYING:
+                        return s
+                except Exception:
+                    continue
+            return ytm_sessions[0]
+
+        if current is not None and _is_youtube_music(current.source_app_user_model_id):
+            if not ytm_enabled:
+                # Skip YTM — fall back to another session if any.
+                for s in sessions:
+                    if s is not None and not _is_youtube_music(s.source_app_user_model_id):
+                        return s
+                return None
+        return current
+
     async def _poll_media(self) -> None:
         info = MediaInfo()
         manager = self._manager
@@ -247,7 +299,7 @@ class MediaService:
             self._emit_media(info)
             return
 
-        session = manager.get_current_session()
+        session = self._pick_session(manager)
         self._session = session
         if session is None:
             self._last_thumb_key = None
@@ -437,6 +489,10 @@ class MediaService:
                 continue
             toast = self._parse_toast(n, KnownNotificationBindings)
             if toast is None:
+                continue
+            if toast.is_whatsapp and not bool(
+                self._settings.get("whatsapp_toasts_enabled", True)
+            ):
                 continue
             self._seen_toast_ids.add(nid)
             if self._on_toast:
