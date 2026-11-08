@@ -22,16 +22,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install Isle + build dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller
+          python -c "import PySide6; print('PySide6', PySide6.__version__)"
 
       - name: Build Isle executable
         shell: powershell
         run: |
-          # Isle is the PySide6 Dynamic Island — do not exclude PySide6.
-          # Bundles media session (winsdk), tray Setup UI (YouTube Music / WhatsApp).
+          # Isle Dynamic Island for Windows (PySide6 + winsdk).
+          # Do NOT exclude PySide6 — the island UI depends on it.
           pyinstaller `
             --noconfirm `
             --clean `
@@ -46,11 +47,13 @@ jobs:
             --hidden-import isle_settings `
             --hidden-import settings_ui `
             isle.py
+          if (-not (Test-Path "dist/Isle.exe")) { throw "PyInstaller did not produce dist/Isle.exe" }
           if (-not (Test-Path VERSION)) { throw "VERSION file not found at repository root (expected: ./VERSION)." }
           $version = (Get-Content VERSION).Trim()
           if (-not $version) { throw "VERSION file is empty; set a version string in ./VERSION before building." }
           $artifactName = "Isle-$version-windows-x86_64.exe"
-          Move-Item "dist/Isle.exe" $artifactName
+          Move-Item "dist/Isle.exe" $artifactName -Force
+          Get-Item $artifactName | Format-List Name, Length, LastWriteTime
           "ARTIFACT_NAME=$artifactName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Upload EXE as release asset
