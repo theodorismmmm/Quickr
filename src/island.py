@@ -356,8 +356,12 @@ class IslandWindow(QWidget):
 
         self.setObjectName("IsleWindow")
         self.setWindowTitle(f"Isle {version}")
+        # Fully transparent HWND so only the painted rounded pill is visible
+        # (DWM acrylic was leaving a square corner behind the glass).
         self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAutoFillBackground(False)
         flags = (
             Qt.FramelessWindowHint
             | Qt.Tool
@@ -409,12 +413,29 @@ class IslandWindow(QWidget):
         self._clock.timeout.connect(self._on_clock)
         self._clock.start()
 
-        # Soft acrylic hint on Windows for liquid glass
-        QTimer.singleShot(0, self._try_enable_blur)
+        self._apply_chrome_transparency()
+        QTimer.singleShot(0, self._disable_blur)
 
     # ------------------------------------------------------------------
     # UI
     # ------------------------------------------------------------------
+
+    def _apply_chrome_transparency(self) -> None:
+        """Keep child panels clear so glass / pill edges stay rounded."""
+        self.setStyleSheet(
+            "#IsleWindow, #IsleWindow > QWidget { background: transparent; border: none; }"
+        )
+        for w in (
+            self,
+            getattr(self, "compact", None),
+            getattr(self, "expanded", None),
+            getattr(self, "toast_panel", None),
+            getattr(self, "timer_panel", None),
+        ):
+            if w is None:
+                continue
+            w.setAttribute(Qt.WA_TranslucentBackground, True)
+            w.setAutoFillBackground(False)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -672,7 +693,8 @@ class IslandWindow(QWidget):
 
     def apply_style(self, style_id: str) -> None:
         self._style = get_style(style_id)
-        self._try_enable_blur()
+        self._disable_blur()
+        self._apply_chrome_transparency()
         self._recompute_mode(force=True)
         self.update()
 
@@ -717,13 +739,12 @@ class IslandWindow(QWidget):
         self._geo_anim.setEndValue(target)
         self._geo_anim.start()
 
-    def _try_enable_blur(self) -> None:
-        """Best-effort Windows acrylic behind translucent glass styles."""
-        if sys.platform != "win32" or not self._style.fill_glass:
+    def _disable_blur(self) -> None:
+        """Ensure DWM accent/acrylic is off — it draws a square frame under glass."""
+        if sys.platform != "win32":
             return
         try:
             import ctypes
-            from ctypes import wintypes
 
             class ACCENTPOLICY(ctypes.Structure):
                 _fields_ = [
@@ -740,72 +761,90 @@ class IslandWindow(QWidget):
                     ("SizeOfData", ctypes.c_size_t),
                 ]
 
-            # ACCENT_ENABLE_ACRYLICBLURBEHIND = 4; gradient ABGR
             accent = ACCENTPOLICY()
-            accent.AccentState = 4
-            accent.AccentFlags = 2
-            accent.GradientColor = 0x33202020
+            accent.AccentState = 0  # ACCENT_DISABLED
             data = WINCOMPATTRDATA()
-            data.Attribute = 19  # WCA_ACCENT_POLICY
+            data.Attribute = 19
             data.Data = ctypes.cast(ctypes.pointer(accent), ctypes.c_void_p)
             data.SizeOfData = ctypes.sizeof(accent)
-            hwnd = int(self.winId())
-            ctypes.windll.user32.SetWindowCompositionAttribute(hwnd, ctypes.byref(data))
+            ctypes.windll.user32.SetWindowCompositionAttribute(
+                int(self.winId()), ctypes.byref(data)
+            )
         except Exception:
-            log.debug("acrylic blur unavailable", exc_info=True)
+            log.debug("disable blur failed", exc_info=True)
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
-        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+
+        # Clear the full HWND to transparent first — otherwise opaque corners remain.
+        p.setCompositionMode(QPainter.CompositionMode_Source)
+        p.fillRect(self.rect(), Qt.transparent)
+        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+
+        rect = QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
         r = self._radius_for(self.size())
+        # Keep radius within the rect so corners stay fully round.
+        r = min(r, rect.width() / 2.0, rect.height() / 2.0)
         path = QPainterPath()
         path.addRoundedRect(rect, r, r)
 
         st = self._style
+        p.setPen(Qt.NoPen)
         if st.fill_glass:
-            # Liquid glass: translucent body + specular wash (Apple-like).
-            p.setPen(Qt.NoPen)
+            # Liquid glass body (see-through tint).
             p.setBrush(QBrush(st.fill))
             p.drawPath(path)
             if st.specular:
-                grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-                grad.setColorAt(0.0, QColor(255, 255, 255, 70))
-                grad.setColorAt(0.35, QColor(255, 255, 255, 18))
-                grad.setColorAt(1.0, QColor(255, 255, 255, 0))
-                p.setBrush(QBrush(grad))
+                highlight = QLinearGradient(rect.topLeft(), QRectF(rect).center())
+                highlight.setColorAt(0.0, QColor(255, 255, 255, 95))
+                highlight.setColorAt(0.45, QColor(255, 255, 255, 22))
+                highlight.setColorAt(1.0, QColor(255, 255, 255, 0))
+                p.setBrush(QBrush(highlight))
                 p.drawPath(path)
-                # Soft bottom depth
-                depth = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-                depth.setColorAt(0.55, QColor(0, 0, 0, 0))
-                depth.setColorAt(1.0, QColor(0, 0, 0, 40))
+                depth = QLinearGradient(rect.center(), rect.bottomRight())
+                depth.setColorAt(0.0, QColor(0, 0, 0, 0))
+                depth.setColorAt(1.0, QColor(0, 0, 0, 55))
                 p.setBrush(QBrush(depth))
                 p.drawPath(path)
-        else:
-            p.setPen(Qt.NoPen)
-            p.setBrush(QBrush(st.fill))
-            p.drawPath(path)
-
-        show_rim = self._hover or self._mode in (
-            IslandMode.EXPANDED,
-            IslandMode.TOAST,
-            IslandMode.TIMER,
-            IslandMode.COMPACT,
-        )
-        if show_rim:
+            # Always draw glass rim so the pill reads as rounded, not a box.
             pen = QPen(st.rim)
-            pen.setWidthF(st.rim_width if self._hover else max(1.0, st.rim_width * 0.7))
+            pen.setWidthF(st.rim_width)
             p.setPen(pen)
             p.setBrush(Qt.NoBrush)
             p.drawPath(path)
-            if self._hover or st.fill_glass:
-                inner = QRectF(self.rect()).adjusted(2.2, 2.2, -2.2, -2.2)
-                ip = QPainterPath()
-                ip.addRoundedRect(inner, max(2.0, r - 2.0), max(2.0, r - 2.0))
-                ipen = QPen(st.inner)
-                ipen.setWidthF(1.0)
-                p.setPen(ipen)
-                p.drawPath(ip)
+            inner = rect.adjusted(2.0, 2.0, -2.0, -2.0)
+            ip = QPainterPath()
+            ir = max(2.0, r - 2.0)
+            ip.addRoundedRect(inner, ir, ir)
+            ipen = QPen(st.inner)
+            ipen.setWidthF(1.0)
+            p.setPen(ipen)
+            p.drawPath(ip)
+        else:
+            p.setBrush(QBrush(st.fill))
+            p.drawPath(path)
+            show_rim = self._hover or self._mode in (
+                IslandMode.EXPANDED,
+                IslandMode.TOAST,
+                IslandMode.TIMER,
+                IslandMode.COMPACT,
+            )
+            if show_rim:
+                pen = QPen(st.rim)
+                pen.setWidthF(st.rim_width if self._hover else max(1.0, st.rim_width * 0.7))
+                p.setPen(pen)
+                p.setBrush(Qt.NoBrush)
+                p.drawPath(path)
+                if self._hover:
+                    inner = rect.adjusted(2.2, 2.2, -2.2, -2.2)
+                    ip = QPainterPath()
+                    ip.addRoundedRect(inner, max(2.0, r - 2.0), max(2.0, r - 2.0))
+                    ipen = QPen(st.inner)
+                    ipen.setWidthF(1.0)
+                    p.setPen(ipen)
+                    p.drawPath(ip)
         p.end()
 
     # ------------------------------------------------------------------

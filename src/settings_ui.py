@@ -1,9 +1,8 @@
-"""Tray Setup UI — styles, media, WhatsApp, iPhone Connect, timer defaults."""
+"""Tray Setup UI — wide layout with scroll so every section is reachable."""
 
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import webbrowser
 from typing import Callable, List, Optional
@@ -22,6 +21,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -33,10 +33,10 @@ from phone_connect import BtDevice
 
 
 class SettingsWindow(QWidget):
-    """Taskbar/tray companion UI — not the island itself."""
+    """Wide Setup window with a scroll area so lower sections stay accessible."""
 
     style_changed = Signal(str)
-    phone_target_changed = Signal(str, str)  # address, name
+    phone_target_changed = Signal(str, str)
 
     def __init__(
         self,
@@ -46,156 +46,180 @@ class SettingsWindow(QWidget):
         super().__init__(parent)
         self._on_changed = on_changed
         self.setWindowTitle("Isle Setup")
-        self.setMinimumWidth(460)
+        self.setMinimumSize(760, 380)
+        self.resize(900, 520)
         self.setWindowFlags(Qt.Window | Qt.WindowCloseButtonHint | Qt.WindowTitleHint)
         self.setStyleSheet(
             """
-            QWidget { background: #111111; color: #f0f0f0; }
+            QWidget { background: #121212; color: #f0f0f0; font-size: 12px; }
+            QScrollArea { border: none; background: #121212; }
             QGroupBox {
                 border: 1px solid #2a2a2a;
-                border-radius: 10px;
-                margin-top: 14px;
-                padding: 12px 12px 10px 12px;
+                border-radius: 8px;
+                margin-top: 10px;
+                padding: 10px 10px 8px 10px;
                 font-weight: 600;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
-                left: 12px;
+                left: 10px;
                 padding: 0 4px;
                 color: #ffffff;
             }
-            QCheckBox { spacing: 8px; }
+            QCheckBox { spacing: 6px; }
             QLineEdit, QComboBox, QSpinBox, QListWidget {
                 background: #1a1a1a;
                 border: 1px solid #333;
                 border-radius: 6px;
-                padding: 6px 8px;
+                padding: 5px 8px;
                 color: #fff;
+                min-height: 22px;
             }
+            QListWidget { padding: 2px; }
             QPushButton {
                 background: #1c1c1c;
                 border: 1px solid #3a3a3a;
-                border-radius: 8px;
-                padding: 8px 14px;
+                border-radius: 7px;
+                padding: 6px 12px;
                 color: #fff;
             }
             QPushButton:hover { border-color: #777; }
-            QLabel#hint { color: #9a9a9a; font-size: 12px; }
+            QLabel#hint { color: #8e8e8e; font-size: 11px; }
+            QLabel#title { color: #ffffff; font-size: 15px; font-weight: 600; }
+            QScrollBar:vertical {
+                background: #121212;
+                width: 10px;
+                margin: 0;
+            }
+            QScrollBar::handle:vertical {
+                background: #3a3a3a;
+                border-radius: 4px;
+                min-height: 24px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
             """
         )
         self._devices: List[BtDevice] = []
+        self._refresh_bt_cb: Optional[Callable[[], None]] = None
         self._build()
         self.reload()
 
     def _build(self) -> None:
-        root = QVBoxLayout(self)
-        root.setContentsMargins(18, 18, 18, 18)
-        root.setSpacing(12)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
+        header = QWidget()
+        header_l = QHBoxLayout(header)
+        header_l.setContentsMargins(14, 12, 14, 8)
         title = QLabel("Isle Setup")
-        title.setFont(QFont("Segoe UI", 16, QFont.Weight.DemiBold))
-        subtitle = QLabel(
-            "Always-on island over apps. Hover to expand, move away or click "
-            "outside to collapse. Pick a look, connect media / WhatsApp / iPhone."
-        )
-        subtitle.setObjectName("hint")
-        subtitle.setWordWrap(True)
-        root.addWidget(title)
-        root.addWidget(subtitle)
+        title.setObjectName("title")
+        title.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
+        hint = QLabel("Scroll for all options · Hover expands the island · click away collapses")
+        hint.setObjectName("hint")
+        header_l.addWidget(title)
+        header_l.addSpacing(12)
+        header_l.addWidget(hint, 1)
+        outer.addWidget(header)
 
-        # ---- Style ----
-        style_box = QGroupBox("Island style")
-        style_l = QVBoxLayout(style_box)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setFocusPolicy(Qt.StrongFocus)
+
+        body = QWidget()
+        body_l = QVBoxLayout(body)
+        body_l.setContentsMargins(14, 4, 14, 14)
+        body_l.setSpacing(10)
+
+        columns = QHBoxLayout()
+        columns.setSpacing(12)
+        left = QVBoxLayout()
+        left.setSpacing(8)
+        right = QVBoxLayout()
+        right.setSpacing(8)
+
+        # ---- Look / Timer ----
+        style_box = QGroupBox("Look")
+        style_form = QFormLayout(style_box)
+        style_form.setSpacing(6)
         self.style_combo = QComboBox()
         for sid, label in style_choices():
             self.style_combo.addItem(label, sid)
-        style_l.addWidget(self.style_combo)
-        style_hint = QLabel(
-            "Liquid Glass · Apple Dynamic Island · Xiaomi · Samsung Dot · Notch"
-        )
-        style_hint.setObjectName("hint")
-        style_hint.setWordWrap(True)
-        style_l.addWidget(style_hint)
-        root.addWidget(style_box)
-
-        # ---- Timer ----
-        timer_box = QGroupBox("Timer")
-        timer_l = QFormLayout(timer_box)
         self.timer_mins = QSpinBox()
         self.timer_mins.setRange(1, 180)
         self.timer_mins.setSuffix(" min")
-        timer_l.addRow("Default duration", self.timer_mins)
-        timer_hint = QLabel(
-            "Start a timer from the tray. It shows in the island; hover to control."
-        )
-        timer_hint.setObjectName("hint")
-        timer_hint.setWordWrap(True)
-        timer_l.addRow(timer_hint)
-        root.addWidget(timer_box)
+        style_form.addRow("Style", self.style_combo)
+        style_form.addRow("Timer", self.timer_mins)
+        left.addWidget(style_box)
 
         # ---- YouTube Music ----
         yt = QGroupBox("YouTube Music")
         yt_l = QVBoxLayout(yt)
-        self.yt_enabled = QCheckBox("Show YouTube Music in the island")
-        self.yt_prefer = QCheckBox("Prefer YouTube Music when several players are active")
+        yt_l.setSpacing(6)
+        self.yt_enabled = QCheckBox("Show in island")
+        self.yt_prefer = QCheckBox("Prefer when multiple players are active")
         self.yt_url = QLineEdit()
-        form = QFormLayout()
-        form.addRow("Open URL", self.yt_url)
+        self.yt_url.setPlaceholderText("https://music.youtube.com")
+        yt_row = QHBoxLayout()
+        yt_row.addWidget(QLabel("URL"))
+        yt_row.addWidget(self.yt_url, 1)
+        open_yt = QPushButton("Open")
+        open_yt.clicked.connect(self._open_youtube_music)
+        yt_row.addWidget(open_yt)
         yt_l.addWidget(self.yt_enabled)
         yt_l.addWidget(self.yt_prefer)
-        yt_l.addLayout(form)
-        open_yt = QPushButton("Open YouTube Music")
-        open_yt.clicked.connect(self._open_youtube_music)
-        yt_l.addWidget(open_yt, 0, Qt.AlignLeft)
-        root.addWidget(yt)
+        yt_l.addLayout(yt_row)
+        left.addWidget(yt)
 
         # ---- WhatsApp ----
         wa = QGroupBox("WhatsApp")
         wa_l = QVBoxLayout(wa)
-        self.wa_toasts = QCheckBox("Show WhatsApp toasts in the island")
-        self.wa_reply = QCheckBox("Show reply field (copies text + opens whatsapp:)")
+        wa_l.setSpacing(6)
+        self.wa_toasts = QCheckBox("Show toasts in island")
+        self.wa_reply = QCheckBox("Reply field (copy + open whatsapp:)")
         self.wa_uri = QLineEdit()
-        wa_form = QFormLayout()
-        wa_form.addRow("Launch URI", self.wa_uri)
+        self.wa_uri.setPlaceholderText("whatsapp:")
+        wa_row = QHBoxLayout()
+        wa_row.addWidget(QLabel("URI"))
+        wa_row.addWidget(self.wa_uri, 1)
+        open_wa = QPushButton("Open")
+        open_wa.clicked.connect(self._open_whatsapp)
+        notif = QPushButton("Notification access")
+        notif.clicked.connect(self._open_notification_settings)
+        wa_row.addWidget(open_wa)
+        wa_row.addWidget(notif)
         wa_l.addWidget(self.wa_toasts)
         wa_l.addWidget(self.wa_reply)
-        wa_l.addLayout(wa_form)
-        wa_hint = QLabel(
-            "Reply copies text and opens WhatsApp — it does not send the toast "
-            "inline reply or automate WhatsApp Web."
-        )
+        wa_l.addLayout(wa_row)
+        wa_hint = QLabel("Does not send toast inline replies or automate WhatsApp Web.")
         wa_hint.setObjectName("hint")
         wa_hint.setWordWrap(True)
         wa_l.addWidget(wa_hint)
-        wa_btns = QHBoxLayout()
-        open_wa = QPushButton("Open WhatsApp")
-        open_wa.clicked.connect(self._open_whatsapp)
-        notif = QPushButton("Notification access…")
-        notif.clicked.connect(self._open_notification_settings)
-        wa_btns.addWidget(open_wa)
-        wa_btns.addWidget(notif)
-        wa_btns.addStretch(1)
-        wa_l.addLayout(wa_btns)
-        root.addWidget(wa)
+        left.addWidget(wa)
+        left.addStretch(1)
 
         # ---- iPhone Connect ----
         phone = QGroupBox("iPhone Connect")
         phone_l = QVBoxLayout(phone)
-        self.phone_enabled = QCheckBox("Enable iPhone Connect (Bluetooth)")
+        phone_l.setSpacing(6)
+        self.phone_enabled = QCheckBox("Enable Bluetooth link")
         self.phone_status = QLabel("Bluetooth idle")
         self.phone_status.setObjectName("hint")
         self.phone_status.setWordWrap(True)
         self.phone_list = QListWidget()
-        self.phone_list.setMinimumHeight(110)
+        self.phone_list.setMinimumHeight(160)
         phone_l.addWidget(self.phone_enabled)
         phone_l.addWidget(self.phone_status)
         phone_l.addWidget(self.phone_list)
         phone_btns = QHBoxLayout()
-        refresh = QPushButton("Refresh devices")
+        refresh = QPushButton("Refresh")
         refresh.clicked.connect(self._request_refresh_bt)
         pick = QPushButton("Use selected")
         pick.clicked.connect(self._use_selected_phone)
-        bt_settings = QPushButton("Windows Bluetooth…")
+        bt_settings = QPushButton("Windows Bluetooth")
         bt_settings.clicked.connect(self._open_bluetooth_settings)
         phone_btns.addWidget(refresh)
         phone_btns.addWidget(pick)
@@ -203,17 +227,26 @@ class SettingsWindow(QWidget):
         phone_btns.addStretch(1)
         phone_l.addLayout(phone_btns)
         phone_hint = QLabel(
-            "Pair your iPhone in Windows first. Isle can track the Bluetooth "
-            "link and show Windows notifications (WhatsApp, Mail, Phone Link, "
-            "browsers, …) in the island. Apple Continuity notification mirroring "
-            "is not available to third-party Windows apps."
+            "Pair in Windows first. Isle tracks the BT link and shows Windows "
+            "notifications in the island. Apple Continuity mirroring is not available to third-party apps."
         )
         phone_hint.setObjectName("hint")
         phone_hint.setWordWrap(True)
         phone_l.addWidget(phone_hint)
-        root.addWidget(phone)
+        right.addWidget(phone)
+        right.addStretch(1)
 
-        bottom = QHBoxLayout()
+        columns.addLayout(left, 1)
+        columns.addLayout(right, 1)
+        body_l.addLayout(columns)
+        body_l.addStretch(1)
+
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
+
+        footer = QWidget()
+        bottom = QHBoxLayout(footer)
+        bottom.setContentsMargins(14, 8, 14, 12)
         bottom.addStretch(1)
         save_btn = QPushButton("Save")
         save_btn.clicked.connect(self._save)
@@ -221,14 +254,9 @@ class SettingsWindow(QWidget):
         close_btn.clicked.connect(self.close)
         bottom.addWidget(save_btn)
         bottom.addWidget(close_btn)
-        root.addLayout(bottom)
+        outer.addWidget(footer)
 
-        self._refresh_bt_cb: Optional[Callable[[], None]] = None
-
-    def set_bluetooth_hooks(
-        self,
-        refresh_cb: Callable[[], None],
-    ) -> None:
+    def set_bluetooth_hooks(self, refresh_cb: Callable[[], None]) -> None:
         self._refresh_bt_cb = refresh_cb
 
     def set_phone_status(self, text: str) -> None:
@@ -240,12 +268,14 @@ class SettingsWindow(QWidget):
         self.phone_list.clear()
         for d in devices:
             tag = "iPhone" if d.is_iphone else "Device"
-            if getattr(d, "is_connected", False):
+            if getattr(d, "is_connected", False) and getattr(d, "is_paired", False):
                 state = "connected"
-            elif getattr(d, "is_present", False):
+            elif getattr(d, "is_paired", False) and getattr(d, "is_present", False):
                 state = "in range"
-            else:
+            elif getattr(d, "is_paired", False):
                 state = "paired"
+            else:
+                state = "unpaired"
             item = QListWidgetItem(f"[{tag} · {state}] {d.name}")
             item.setData(Qt.UserRole, d.address)
             item.setData(Qt.UserRole + 1, d.name)
@@ -283,7 +313,6 @@ class SettingsWindow(QWidget):
 
     def _save(self) -> None:
         data = self._collect()
-        # Preserve selected phone from list if present.
         item = self.phone_list.currentItem()
         if item is not None:
             data["iphone_device_address"] = item.data(Qt.UserRole) or ""
@@ -323,20 +352,14 @@ class SettingsWindow(QWidget):
             QMessageBox.information(self, "Isle", "Bluetooth service not ready yet.")
 
     def _open_youtube_music(self) -> None:
-        url = self.yt_url.text().strip() or cfg.DEFAULTS["youtube_music_url"]
-        webbrowser.open(url)
+        webbrowser.open(self.yt_url.text().strip() or cfg.DEFAULTS["youtube_music_url"])
 
     def _open_whatsapp(self) -> None:
-        uri = self.wa_uri.text().strip() or cfg.DEFAULTS["whatsapp_uri"]
-        webbrowser.open(uri)
+        webbrowser.open(self.wa_uri.text().strip() or cfg.DEFAULTS["whatsapp_uri"])
 
     def _open_notification_settings(self) -> None:
         if sys.platform != "win32":
-            QMessageBox.information(
-                self,
-                "Isle",
-                "Privacy → Notifications → User notification access",
-            )
+            QMessageBox.information(self, "Isle", "Privacy → Notifications → User notification access")
             return
         for target in ("ms-settings:privacy-notifications", "ms-settings:notifications"):
             try:
