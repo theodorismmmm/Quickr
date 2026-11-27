@@ -1,7 +1,7 @@
 # Quickr
 
 A minimal, sleek Linux minibar (dock) that lets you pin shortcuts to apps, files, folders, and URLs — all accessible from a slim panel at the bottom of your screen.
-
+lol
 ---
 
 ## Features
